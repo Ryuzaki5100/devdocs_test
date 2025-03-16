@@ -598,7 +598,7 @@ move_to_archive_task = PythonOperator(
 
 
 skip_prepare_staging_task = EmptyOperator(
-    task_id=TASK_SKIP_PREPARE_STAGING,
+    task_id = TASK_SKIP_PREPARE_STAGING,
     dag=dag,
 )
 
