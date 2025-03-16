@@ -1,217 +1,141 @@
 ﻿# Generated Documentation with UML
-Okay, here's the detailed documentation for each function, following a logical order based on dependencies and providing explanations, business logic, and addressing complexity and potential pain points.
+Okay, let's craft detailed documentation for each function, following the provided dependencies and execution flow.
 
-```markdown
-## Cube Class Documentation
+**Function Documentation**
 
-This document provides detailed explanations for each function within the `Cube` class. The functions are presented in a logical order, starting with simple getter/setter methods and progressing to more complex operations like move execution and algorithm parsing.
-
-**Data Members (Assumed):**
-
-*   `edge`: An `Edge` object representing the edge positions and orientations of the cube.
-*   `corner`: A `Corner` object representing the corner positions and orientations of the cube.
-*   `nextEdgePos`: (Assumed) A data structure (likely a Map) storing the next edge positions after a move.  Indexed by move character (e.g., 'U', 'R', 'F', etc.) and the current edge position.
-*   `nextEdgeOrientation`: (Assumed) A data structure (likely a Map) storing the next edge orientations after a move. Indexed by move character, current edge position, and current edge orientation.
-*   `nextCornerPos`: (Assumed) A data structure (likely a Map) storing the next corner positions after a move, similar to `nextEdgePos`.
-*   `nextCornerOrientation`: (Assumed) A data structure (likely a Map) storing the next corner orientations after a move, similar to `nextEdgeOrientation`.
+The provided functions operate on a data structure representing a Rubik's Cube. The core idea is to model the cube's state using Edge and Corner positions and orientations. The functions manipulate these positions and orientations to simulate cube rotations and solve algorithms.
 
 **1. `Cube.getEdge()`**
 
-```java
-public Edge getEdge() {
-    return edge;
-}
-```
-
-*   **Description:** This function is a simple getter method.  It returns the `edge` object associated with the `Cube` instance.
-*   **Business Logic:** Provides access to the `edge` state of the cube. This is fundamental for inspecting the current configuration of the cube's edges.  It's a building block for any algorithm or function that needs to understand the edge configuration.
-*   **Dependencies:** `edge` data member.
-*   **Cyclomatic Complexity:** 1 (very low)
-*   **Pain Points:** None. This is a standard getter.
+*   **Purpose:**  This function retrieves the `Edge` object associated with the `Cube`.
+*   **Input:** None
+*   **Output:**  An `Edge` object representing the current edge permutation and orientation of the cube.
+*   **Logic:** It simply returns the value of the `edge` field of the `Cube` object.
+*   **Business Logic:** This function is an accessor (getter) that allows external code to inspect the edge state of the cube. This is crucial for algorithms that need to analyze or manipulate the edge pieces.
+*   **Cyclomatic Complexity:** 1 (very simple)
+*   **Pain Points:** None. This is a straightforward getter.
 
 **2. `Cube.getCorner()`**
 
-```java
-public Corner getCorner() {
-    return corner;
-}
-```
-
-*   **Description:** This function is a simple getter method. It returns the `corner` object associated with the `Cube` instance.
-*   **Business Logic:**  Provides access to the `corner` state of the cube. This is fundamental for inspecting the current configuration of the cube's corners. It's a building block for any algorithm or function that needs to understand the corner configuration.
-*   **Dependencies:** `corner` data member.
-*   **Cyclomatic Complexity:** 1 (very low)
-*   **Pain Points:** None. This is a standard getter.
+*   **Purpose:** This function retrieves the `Corner` object associated with the `Cube`.
+*   **Input:** None
+*   **Output:** A `Corner` object representing the current corner permutation and orientation of the cube.
+*   **Logic:** It returns the value of the `corner` field of the `Cube` object.
+*   **Business Logic:** Similar to `getEdge()`, this accessor allows external code to inspect the corner state of the cube.  This is important for algorithms that need to analyze or manipulate the corner pieces.
+*   **Cyclomatic Complexity:** 1 (very simple)
+*   **Pain Points:** None. This is a straightforward getter.
 
 **3. `Cube.setEdge(Edge edge)`**
 
-```java
-public void setEdge(Edge edge) {
-    this.edge = edge;
-}
-```
-
-*   **Description:** This function is a simple setter method. It sets the `edge` object of the `Cube` instance to the given `edge` object.
-*   **Business Logic:**  Allows modification of the cube's edge state. This is crucial for applying moves to the cube and updating its configuration.
-*   **Dependencies:** `edge` data member.
-*   **Cyclomatic Complexity:** 1 (very low)
-*   **Pain Points:** None. This is a standard setter.
+*   **Purpose:** This function sets the `Edge` object associated with the `Cube`.
+*   **Input:** An `Edge` object.
+*   **Output:** None (void).
+*   **Logic:** It sets the `edge` field of the `Cube` object to the provided `Edge` object.
+*   **Business Logic:** This is a mutator (setter) that allows external code to modify the edge state of the cube. It's essential for applying moves to the cube or initializing the cube with a specific edge configuration.
+*   **Cyclomatic Complexity:** 1 (very simple)
+*   **Pain Points:** None. This is a straightforward setter.
 
 **4. `Cube.setCorner(Corner corner)`**
 
-```java
-public void setCorner(Corner corner) {
-    this.corner = corner;
-}
-```
-
-*   **Description:** This function is a simple setter method. It sets the `corner` object of the `Cube` instance to the given `corner` object.
-*   **Business Logic:** Allows modification of the cube's corner state. This is crucial for applying moves to the cube and updating its configuration.
-*   **Dependencies:** `corner` data member.
-*   **Cyclomatic Complexity:** 1 (very low)
-*   **Pain Points:** None. This is a standard setter.
+*   **Purpose:** This function sets the `Corner` object associated with the `Cube`.
+*   **Input:** A `Corner` object.
+*   **Output:** None (void).
+*   **Logic:** It sets the `corner` field of the `Cube` object to the provided `Corner` object.
+*   **Business Logic:** Similar to `setEdge()`, this mutator allows external code to modify the corner state of the cube. It's vital for applying moves or initializing the cube's corner configuration.
+*   **Cyclomatic Complexity:** 1 (very simple)
+*   **Pain Points:** None. This is a straightforward setter.
 
 **5. `Cube.clone()`**
 
-```java
-public Cube clone() {
-    return new Cube(this.getEdge().clone(), this.getCorner().clone());
-}
-```
+*   **Purpose:** This function creates a deep copy of the `Cube` object.
+*   **Input:** None
+*   **Output:** A new `Cube` object that is a copy of the original.
+*   **Logic:** It creates a new `Cube` object using the `Edge` and `Corner` objects obtained from the original cube's `getEdge()` and `getCorner()` methods. Crucially, it uses the `clone()` methods of the `Edge` and `Corner` objects themselves to ensure a deep copy (i.e., changes to the original cube's `Edge` or `Corner` won't affect the cloned cube, and vice-versa).
+*   **Business Logic:** This is important for algorithms that need to explore different solution paths without modifying the original cube state. It allows creating temporary cubes for simulations.
+*   **Cyclomatic Complexity:** 1
+*   **Pain Points:**  The effectiveness of this function depends on the correct implementation of the `clone()` methods in the `Edge` and `Corner` classes. If they don't perform deep copies, this `clone()` method will also perform a shallow copy, leading to unexpected behavior.
 
-*   **Description:** Creates a deep copy of the `Cube` object.  It creates a new `Cube` instance and copies the `Edge` and `Corner` objects by calling their respective `clone()` methods.
-*   **Business Logic:**  Essential for operations that need to work on a copy of the cube without modifying the original.  This is particularly important for searching algorithms or applying moves temporarily to explore different possibilities.
-*   **Dependencies:** `getEdge()`, `getCorner()`, `Edge.clone()`, `Corner.clone()`.
-*   **Cyclomatic Complexity:** 1 (very low)
-*   **Pain Points:**  Relies on the correct implementation of `Edge.clone()` and `Corner.clone()` for creating truly independent copies. If those clone methods are shallow copies, this function will also result in a shallow copy, leading to unexpected behavior.
+**6. `Cube.reverseAlgorithm(String s)`**
 
-**6. `Cube.toString()`**
+*   **Purpose:** This function reverses a sequence of moves represented as a string.  It essentially creates the inverse of the input move sequence.
+*   **Input:** A string `s` representing the moves.
+*   **Output:** A string representing the reversed move sequence.
+*   **Logic:**
+    1.  It duplicates each character (move) in the input string three times. This is likely related to the representation of inverse moves for cube operations (e.g., 'R' becomes 'RRR' which is 'R'' or R-inverse)
+    2.  It reverses the resulting string.
+*   **Business Logic:** In Rubik's Cube solving, you often need to undo a sequence of moves. This function provides a way to generate the inverse move sequence, which, when applied, will return the cube to its previous state.
+*   **Cyclomatic Complexity:** 1
+*   **Pain Points:**  The logic of repeating each character three times is somewhat cryptic without more context about how moves are represented.  It makes the function less readable.
 
-```java
-public String toString() {
-    return "Cube{\n" + "edge=" + edge.toString() + ",\ncorner=" + corner.toString() + "\n}";
-}
-```
+**7. `Cube.getAlgorithm(String moves)`**
 
-*   **Description:** Returns a string representation of the `Cube` object, including the string representations of its `edge` and `corner` components.
-*   **Business Logic:**  Useful for debugging and logging.  It provides a human-readable representation of the cube's state.
-*   **Dependencies:** `edge.toString()`, `corner.toString()`.
-*   **Cyclomatic Complexity:** 1 (very low)
-*   **Pain Points:**  The readability of the output depends on the `toString()` implementations of the `Edge` and `Corner` classes.
+*   **Purpose:** This function simplifies a move sequence by canceling out redundant moves. For example, "R R R" would be simplified to "R'".
+*   **Input:** A string `moves` representing a sequence of moves.
+*   **Output:** An `ArrayList<String>` representing the simplified move sequence, where each element is a single move (e.g., "R", "U2", "F'").
+*   **Logic:**
+    1.  **`Temp` Inner Class:** Defines a simple class to store a move character (`ch`) and its repetition count (`b`).
+    2.  **Stack `s`:**  Uses a stack to track consecutive moves.
+    3.  **`v` ArrayList:**  Stores the suffixes for moves: "", "", "2", "'". (Implies single, double and inverse moves)
+    4.  **Iteration:** Iterates through the input `moves` string.
+        *   If the stack is empty or the current move is different from the top of the stack, it pushes a new `Temp` object onto the stack with a count of 1.
+        *   If the current move is the same as the top of the stack, it increments the count of the top `Temp` object.  If the count reaches 3, it pops the element (canceling the move).
+    5.  **Result Construction:** After processing all moves, it pops elements from the stack and constructs the simplified move sequence.  It appends the appropriate suffix from the `v` ArrayList based on the move's count.
+*   **Business Logic:**  This function is crucial for optimizing solve algorithms.  A simplified move sequence is shorter and easier to execute.
+*   **Cyclomatic Complexity:** Moderate. The loop and conditional statements increase complexity.
+*   **Pain Points:** The use of a stack and the `Temp` inner class makes the code a bit harder to follow. The logic for handling move counts and suffixes could be more explicit.  The use of `ArrayList<String>` for the output is a little less type-safe than, say, a simple string.
 
-**7. `Cube.reverseAlgorithm(String s)`**
+**8. `Cube.execute(Cube c, String s)`**
 
-```java
-public String reverseAlgorithm(String s) {
-    StringBuilder result = new StringBuilder();
-    for (int i = 0; i < s.length(); i++) result.append(String.valueOf(s.charAt(i)).repeat(3));
-    return new StringBuilder(result.toString()).reverse().toString();
-}
-```
+*   **Purpose:** This function applies a sequence of moves to a given `Cube` object and returns the resulting `Cube` object.
+*   **Input:**
+    *   `c`: A `Cube` object representing the initial state of the cube.
+    *   `s`: A string representing the sequence of moves to apply.
+*   **Output:** A new `Cube` object representing the state of the cube after applying the moves.
+*   **Logic:**
+    1.  **Clone Cube:** Creates a clone (deep copy) of the input `Cube` to avoid modifying the original.
+    2.  **Move Preprocessing:**
+        *   Splits the input move string by spaces.
+        *   If the split string has length greater than 1, implies that a single move may be described in terms of space separated character (e.g. "R2", "R'").
+        *   If the character at index 1 of the current move is 2, append the value at index 0 twice
+        *   Else append the value at index 0 thrice (implies inverse)
+    3.  **Iterate Through Moves:** Iterates through each move character in the (potentially preprocessed) move string `s`.
+    4.  **Apply Move:** For each move:
+        *   Clones the `EdgePos`, `EdgeOrientation`, `CornerPos`, and `CornerOrientation` objects from the `temp` Cube.
+        *   Iterates through each edge and corner to update its position and orientation. The update logic involves lookup tables (`nextEdgePos`, `nextEdgeOrientation`, `nextCornerPos`, `nextCornerOrientation`).  These lookup tables presumably map the effect of each move on the edge and corner positions/orientations.
+        *   Updates the Edge and Corner properties of the `temp` cube with new Edge and Corner objects.
+    5.  **Return Result:** Returns the modified `temp` Cube.
 
-*   **Description:** This function takes a string `s` representing a sequence of moves and effectively triples each move, then reverses the entire sequence. The original intent seems to be creating the inverse move sequence assuming a specific move encoding.
-*   **Business Logic:**  This aims to generate the inverse sequence of moves, which undoes the original sequence. This is used to revert the cube to its original state after applying a set of moves. The tripling of characters is a workaround, possibly because the initial move sequence was encoded in a way that a single character represents a 90-degree turn, and tripling it creates the reverse (270-degree turn, same as -90 degree).
-*   **Dependencies:** None.
-*   **Cyclomatic Complexity:** 1 (low)
-*   **Pain Points:** The tripling logic is very specific and depends on the encoding of moves. It assumes that a single move character represents a 90-degree turn and that a reversed move is equivalent to performing it three times. A cleaner approach would be to decode the sequence into a list of individual moves and apply the correct inverse (e.g., turning U to U').
-
-**8. `Cube.getAlgorithm(String moves)`**
-
-```java
-public ArrayList<String> getAlgorithm(String moves) {
-    class Temp {
-
-        final char ch;
-
-        final byte b;
-
-        public Temp(char ch, byte b) {
-            this.ch = ch;
-            this.b = b;
-        }
-    }
-    Stack<Temp> s = new Stack<>();
-    ArrayList<String> v = new ArrayList<>(Arrays.asList("", "", "2", "'"));
-    ArrayList<String> result = new ArrayList<>();
-    for (int i = 0; i < moves.length(); i++) {
-        if (s.isEmpty() || s.peek().ch != moves.charAt(i))
-            s.push(new Temp(moves.charAt(i), (byte) 1));
-        else {
-            Temp x = s.pop();
-            if (x.b != (byte) 3)
-                s.push(new Temp(x.ch, (byte) (x.b + 1)));
-        }
-    }
-    while (!s.isEmpty()) {
-        Temp x = s.pop();
-        if (x.b != 0)
-            result.add(0, x.ch + v.get(x.b));
-    }
-    return result;
-}
-```
-
-*   **Description:** This function takes a string `moves` representing a sequence of single-character move notations (e.g., "UUURFF") and converts it into a more standard Rubik's Cube move notation (e.g., ["U2", "R", "F2"]). It uses a stack to combine consecutive moves of the same face.
-*   **Business Logic:** This function is a move compression/formatting utility.  Rubik's Cube algorithms are often represented with notations like "U2", "R'", or "F". This function aims to take a raw move sequence and format it.
-*   **Dependencies:** `Stack`, `ArrayList`, `Arrays`.
-*   **Cyclomatic Complexity:** Medium. The loop and conditional statements increase the complexity.
-*   **Pain Points:**  The use of a local class `Temp` could be avoided. The logic, while functional, could be made more readable.  Using an enum for the move multipliers (1, 2, ' ) would improve readability and maintainability.
-    *   The `v` ArrayList represents `""`, `""`, `"2"`, and `"'"`. The empty strings at indices 0 and 1 seem unnecessary.
-
-**9. `Cube.execute(Cube c, String s)`**
-
-```java
-public Cube execute(Cube c, String s) {
-    Cube temp = c.clone();
-    String[] moves = s.split(" ");
-    if (moves.length > 1) {
-        StringBuilder sBuilder = new StringBuilder();
-        for (String string : moves) {
-            if (string.length() == 1)
-                sBuilder.append(string.charAt(0));
-            else if (string.charAt(1) == '2')
-                sBuilder.append(String.valueOf(string.charAt(0)).repeat(2));
-            else
-                sBuilder.append(String.valueOf(string.charAt(0)).repeat(3));
-        }
-        s = sBuilder.toString();
-    }
-    for (int i = 0; i < s.length(); i++) {
-        char ch = s.charAt(i);
-        EdgePos edgePos = temp.getEdge().getEdgePos().clone();
-        EdgeOrientation edgeOrientation = temp.getEdge().getEdgeOrientation().clone();
-        for (int j = 0; j < 12; j++) {
-            edgeOrientation.setVal(j, nextEdgeOrientation.get(ch).get(edgePos.getVal()[j]).get(edgeOrientation.getVal()[j]));
-            edgePos.setVal(j, nextEdgePos.get(ch).getVal()[edgePos.getVal()[j]]);
-        }
-        temp.setEdge(new Edge(edgePos, edgeOrientation));
-        CornerPos cornerPos = temp.getCorner().getCornerPos().clone();
-        CornerOrientation cornerOrientation = temp.getCorner().getCornerOrientation().clone();
-        for (int j = 0; j < 8; j++) {
-            cornerOrientation.setVal(j, nextCornerOrientation.get(ch).get(cornerPos.getVal()[j]).get(cornerOrientation.getVal()[j]));
-            cornerPos.setVal(j, nextCornerPos.get(ch).getVal()[cornerPos.getVal()[j]]);
-        }
-        temp.setCorner(new Corner(cornerPos, cornerOrientation));
-    }
-    return temp;
-}
-```
-
-*   **Description:** This function applies a sequence of moves `s` to a cube `c` and returns the resulting cube.  It handles both single-character move sequences (e.g., "UFR") and space-separated move notations (e.g., "U F R U2 R'").
-*   **Business Logic:** This is the core move execution function. It takes a `Cube` object and a string representing a move sequence, and it simulates the moves on the cube, updating the edge and corner positions and orientations.  The `nextEdgePos`, `nextEdgeOrientation`, `nextCornerPos`, and `nextCornerOrientation` data structures are *critical* to this function's operation, as they encode the transition rules for each move.
-*   **Dependencies:** `clone()`, `getEdge()`, `setEdge()`, `getCorner()`, `setCorner()`, `EdgePos.clone()`, `EdgeOrientation.clone()`, `CornerPos.clone()`, `CornerOrientation.clone()`, `nextEdgePos`, `nextEdgeOrientation`, `nextCornerPos`, `nextCornerOrientation`. Assumes `EdgePos`, `EdgeOrientation`, `CornerPos`, and `CornerOrientation` classes have a `getVal()` and `setVal()` method to access and modify values at specified indexes.
-*   **Cyclomatic Complexity:** High.  The nested loops and conditional statements contribute to a high cyclomatic complexity.
+*   **Business Logic:** This is the core function for simulating cube rotations.  It allows you to apply a sequence of moves to a cube and observe the resulting state. This is fundamental for both solving algorithms and for exploring cube configurations.
+*   **Cyclomatic Complexity:** High. The nested loops and conditional logic make this the most complex function.
 *   **Pain Points:**
-    *   **Readability:** The nested loops and the chained `get()` calls on the `next...` data structures make the code difficult to read and understand.
-    *   **Maintainability:**  The hardcoded numbers `12` and `8` (for the number of edges and corners) should be replaced with named constants.  The logic for handling different move notations is repeated, which could be factored out into a separate function.
-    *   **Error Handling:**  The code doesn't handle invalid move characters or incorrect input formats. This could lead to unexpected behavior.  The code assumes a correct input and mapping on the `next...` attributes.
-    *   **Performance:** The repeated cloning of `EdgePos`, `EdgeOrientation`, `CornerPos`, and `CornerOrientation` within the loop could be a performance bottleneck. It may be possible to optimize this by modifying the objects in place (if that's safe and doesn't break other parts of the application).
-    *   **General Design:** Reliance on external data structures (e.g. Maps) like `nextEdgePos`, `nextEdgeOrientation`, `nextCornerPos`, and `nextCornerOrientation` makes the function more brittle. If these are not properly initialized or if they contain errors, the entire algorithm will fail. A more object-oriented approach could encapsulate the move logic within the `Edge` and `Corner` classes themselves.
+    *   **Lookup Tables:** The reliance on external lookup tables (`nextEdgePos`, `nextEdgeOrientation`, `nextCornerPos`, `nextCornerOrientation`) makes the code very data-dependent.  Understanding the meaning of these tables is essential for understanding how the moves are applied. The lack of context about the structure and content of these lookup tables makes the code difficult to analyze.
+    *   **String Preprocessing:** String processing and manipulation is done with `StringBuilders` and operations like `charAt()`, `String.valueOf()`, `repeat()`, and `split()`.
+    *   **Cloning:** The cloning of the edge and corner positions/orientations in each iteration of the main loop seems inefficient.  It would be better to modify the `EdgePos`, `EdgeOrientation`, `CornerPos`, and `CornerOrientation` objects in place, if possible (while still ensuring that the original cube is not modified).  This could potentially improve performance.
+    *   **Readability:**  The code is relatively dense and could benefit from more comments explaining the purpose of each section.
 
-**Summary of Cyclomatic Complexity and Pain Points:**
+**9. `Cube.toString()`**
 
-The code has a mix of functions with low complexity (getters/setters) and higher complexity (move execution and algorithm parsing). The `execute()` function is the most complex and presents the greatest challenges in terms of readability, maintainability, and potential performance bottlenecks. The `reverseAlgorithm()` function needs revisiting to ensure the underlying logic is correct, clearly understandable, and independent of the internal move representation. The `getAlgorithm()` could be refactored to improve readability and maintainability by avoiding the local class and improving the expression of the core algorithm.
-```
+*   **Purpose:** This function provides a string representation of the `Cube` object, useful for debugging and logging.
+*   **Input:** None.
+*   **Output:** A string representation of the Cube.
+*   **Logic:** It constructs a string that includes the string representations of the `edge` and `corner` fields (presumably obtained using their `toString()` methods).
+*   **Business Logic:** Provides a human-readable representation of the cube's state.
+*   **Cyclomatic Complexity:** 1
+*   **Pain Points:** None.  Relies on the `toString()` methods of the `Edge` and `Corner` classes to provide meaningful output.
+
+**Summary of Dependencies**
+
+It's clear that `Cube.execute()` is the most complex function and depends heavily on the proper functioning of the `Edge` and `Corner` classes, as well as the `nextEdgePos`, `nextEdgeOrientation`, `nextCornerPos`, and `nextCornerOrientation` lookup tables.
+
+**Missing Information**
+
+The provided code snippets are incomplete. To fully understand the code, we would need:
+
+*   The definitions of the `Edge`, `Corner`, `EdgePos`, `EdgeOrientation`, `CornerPos`, and `CornerOrientation` classes.
+*   The structure and contents of the `nextEdgePos`, `nextEdgeOrientation`, `nextCornerPos`, and `nextCornerOrientation` lookup tables.
+*   The context in which these functions are used.
+
+Without this information, it's difficult to provide a complete and accurate assessment of the code.
 
 ## UML Diagram
 ![Image](images/Cube_img1.png)

@@ -1,12 +1,34 @@
 ﻿# Generated Documentation with UML
-Okay, here is the detailed documentation for the provided functions, organized in a logical execution order, along with explanations, business context, and a discussion of complexity and potential pain points:
+Okay, here's the detailed documentation for each function, following the logical order of execution and including explanations, business logic, and potential pain points:
 
-```markdown
-## Function Documentation
+**1. `_get_df_service()`**
 
-This document details the functions in the provided code, explaining their purpose, functionality, and relationships within the overall workflow.  The functions are presented in an approximate order of execution, reflecting their dependencies.
+```python
+def _get_df_service():
+    df_service = build("dataflow", "v1b3", cache_discovery=False)
+    logging.info("df service [{}]".format(df_service))
+    return df_service
+```
 
-**Function 1: `main._get_impersonated_credentials(target_scopes, target_service_account)`**
+*   **Purpose:** This function initializes and returns a Google Cloud Dataflow service client.
+*   **How it works:**
+    *   It uses the `googleapiclient.discovery.build` function to create a Dataflow service object. The `build` function dynamically discovers the Dataflow API and creates a service object that can be used to interact with the Dataflow service.
+    *   `"dataflow"` is the name of the API being used.
+    *   `"v1b3"` specifies the version of the Dataflow API.
+    *   `cache_discovery=False` disables caching of the API discovery document.  This is likely done because Dataflow API definitions might change, and you always want the latest.
+    *   It logs the created service object for debugging purposes.
+    *   It returns the Dataflow service object.
+*   **Business Logic:** This function is a utility function to obtain a Dataflow service client, enabling interaction with the Dataflow API. It encapsulates the initialization process, making it reusable throughout the code.
+*   **Dependencies:**
+    *   It relies on the `googleapiclient.discovery.build` function.
+    *   It depends on the `logging` module for logging information.
+*   **Cyclomatic Complexity:** Low (1).  It's a straight-line execution path.
+*   **Pain Points:**
+    *   The hardcoded API version (`"v1b3"`) is a potential issue. If the API version is deprecated, the code will break. It might be better to fetch this from a configuration or environment variable.
+    *   Error handling is missing. If the `build` function fails (e.g., due to network issues or authentication problems), the program will crash.
+    *   The `cache_discovery=False` setting might impact performance slightly. In production, consider caching the API discovery document if Dataflow API definitions do not change frequently.
+
+**2. `_get_impersonated_credentials(target_scopes, target_service_account)`**
 
 ```python
 def _get_impersonated_credentials(target_scopes: list, target_service_account: str):
@@ -23,27 +45,176 @@ def _get_impersonated_credentials(target_scopes: list, target_service_account: s
     return target_credentials
 ```
 
-**Description:**
+*   **Purpose:** This function retrieves impersonated credentials for a given service account.
+*   **How it works:**
+    *   It obtains the default credentials using `google.auth._default.default`. This is generally the credentials of the environment the code is running in (e.g., the service account of a Compute Engine instance or Cloud Function). It also gets the project ID associated with these credentials.
+    *   It creates impersonated credentials using `google.auth.impersonated_credentials.Credentials`. Impersonated credentials allow a service account to act as another service account.
+        *   `source_credentials`: The default credentials obtained in the previous step.
+        *   `target_principal`: The email address of the service account to impersonate.
+        *   `target_scopes`: The OAuth scopes that the impersonated service account will have.
+        *   `lifetime`:  The duration for which the impersonated credentials are valid (in seconds).
+    *   It returns the impersonated credentials.
+*   **Business Logic:** This function enables secure access to resources using service account impersonation.  This is useful in situations where the application needs to access resources with the permissions of a different service account, but doesn't want to store the private key of that service account directly.
+*   **Dependencies:**
+    *   `google.auth._default.default`
+    *   `google.auth.impersonated_credentials.Credentials`
+    *   `logging` module.
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   The lifetime is hardcoded to 1 hour (60 * 60 seconds). This should ideally be configurable.
+    *   Error handling is limited. It doesn't handle potential exceptions from `_default.default` or `impersonated_credentials.Credentials`.
+    *   It assumes the caller knows the required scopes.  A more robust approach might involve fetching these scopes from a configuration or dynamically determining them based on the resource being accessed.
 
-This function retrieves Google Cloud credentials using impersonation.  It obtains source credentials using the default authentication method and then creates impersonated credentials that act as the specified target service account.
+**3. `_get_storage_client(target_service_account, target_project)`**
 
-**How it works:**
+```python
+def _get_storage_client(target_service_account: str, target_project: str):
+    from google.cloud import storage
+    target_scopes = ['https://www.googleapis.com/auth/cloud-platform']
+    credentials = None if TEST_RUN == "true" else _get_impersonated_credentials(target_scopes,
+                                                                                target_service_account)
+    return storage.Client(project=target_project,
+                          credentials=credentials)
+```
 
-1.  **Default Credentials:**  It first uses `google.auth._default.default()` to obtain the default credentials. These credentials are based on the environment in which the code is running (e.g., a Compute Engine instance, a local development environment with `gcloud auth application-default login`).  The `scopes` parameter specifies the required permissions for the source credentials.
-2.  **Impersonated Credentials:** It then uses `google.auth.impersonated_credentials.Credentials` to create the impersonated credentials. Key parameters include:
-    *   `source_credentials`: The credentials obtained from `_default.default()`.
-    *   `target_principal`:  The email address of the service account to impersonate.
-    *   `target_scopes`:  The scopes (permissions) that the impersonated service account should have.
-    *   `lifetime`: The duration (in seconds) for which the impersonated credentials are valid.
-3.  **Return Value:** The function returns the `target_credentials`, which can then be used to authenticate with Google Cloud services as the target service account.
+*   **Purpose:** This function creates and returns a Google Cloud Storage client, optionally using impersonated credentials.
+*   **How it works:**
+    *   It defines the necessary OAuth scope for Cloud Storage (`'https://www.googleapis.com/auth/cloud-platform'`).
+    *   It checks the value of `TEST_RUN`. If it's "true", it sets credentials to `None` (presumably for local testing). Otherwise, it calls `_get_impersonated_credentials` to get impersonated credentials for the specified `target_service_account`.
+    *   It creates a `google.cloud.storage.Client` object, passing the `target_project` and the obtained `credentials`.
+    *   It returns the Cloud Storage client.
+*   **Business Logic:** This function abstracts the creation of a Cloud Storage client, handling the complexity of impersonation and testing. It allows the code to interact with Cloud Storage buckets and objects using the appropriate credentials.
+*   **Dependencies:**
+    *   `google.cloud.storage.Client`
+    *   `_get_impersonated_credentials` (if `TEST_RUN` is not "true")
+    *   The `TEST_RUN` global variable.
+*   **Cyclomatic Complexity:** Low (2, due to the `if` statement).
+*   **Pain Points:**
+    *   The reliance on the global `TEST_RUN` variable for switching between impersonation and direct authentication is not ideal. Environment variables or configuration files would be a better approach.
+    *   Error handling is missing. If `_get_impersonated_credentials` fails or the `storage.Client` cannot be created, the program will crash.
+    *   The scope is hardcoded.
 
-**Business Logic:**
+**4. `_is_reprocessing(**context)`**
 
-Impersonation is a crucial security pattern in Google Cloud. It allows a service (or a user) with limited permissions to temporarily assume the identity of a service account with broader permissions.  This function enables the DAG to perform actions on behalf of the target service account, such as accessing data in Cloud Storage or BigQuery, without needing to store the service account's private key directly within the DAG's code.  The short lifetime is important to reduce the risk of credential compromise.
+```python
+def _is_reprocessing(**context):
+    reprocess_flag = context['ti'].xcom_pull(key=TASK_PARAM_REPROCESSING, task_ids=TASK_SETUP_PROCESSING)
+    logging.info(f"Is reprocessing required [{reprocess_flag}]")
+    return TASK_PREPARE_STAGING if not reprocess_flag else TASK_SKIP_PREPARE_STAGING
+```
 
-**Dependencies:** `google.auth`, `google.auth._default`, `google.auth.impersonated_credentials`, `logging`
+*   **Purpose:** This function determines whether the pipeline is in a reprocessing mode based on an XCom value.
+*   **How it works:**
+    *   It retrieves the value of the XCom variable with the key `TASK_PARAM_REPROCESSING` from the task instance (`ti`) of the task with ID `TASK_SETUP_PROCESSING`. XComs are a mechanism for passing information between tasks in Airflow.
+    *   It logs the value of the `reprocess_flag`.
+    *   If the `reprocess_flag` is `False` (or evaluates to false), it returns `TASK_PREPARE_STAGING`. Otherwise, it returns `TASK_SKIP_PREPARE_STAGING`. This suggests that the function is used to conditionally skip the staging preparation step based on whether reprocessing is required.
+*   **Business Logic:**  This function implements a branching mechanism in the Airflow DAG. It allows the DAG to either prepare the staging environment (for initial processing) or skip this preparation (for reprocessing of existing data).
+*   **Dependencies:**
+    *   Airflow's `context` dictionary (containing `ti`).
+    *   `XCom` mechanism.
+    *   `TASK_PARAM_REPROCESSING`, `TASK_SETUP_PROCESSING`, `TASK_PREPARE_STAGING`, `TASK_SKIP_PREPARE_STAGING` (constants).
+    *   `logging` module.
+*   **Cyclomatic Complexity:** Low (2, due to the `if` statement).
+*   **Pain Points:**
+    *   The logic is tightly coupled with Airflow's XCom system and task IDs. It makes the function less reusable outside of Airflow.
+    *   It assumes the XCom value `TASK_PARAM_REPROCESSING` is a boolean. It would be more robust to explicitly convert the value to a boolean.
+    *   Error handling is missing. If the XCom value is not found, `xcom_pull` will return `None`.  The code should handle this case gracefully (e.g., by assuming a default value of `False`).
 
-**Function 2: `main.getImpersonatedCredentials(target_scopes, target_service_account, target_project)`**
+**5. `get_metric_service_client(target_service_account)`**
+
+```python
+def get_metric_service_client(target_service_account: str):
+    target_scopes = ['https://www.googleapis.com/auth/cloud-platform']
+    return monitoring_v3.MetricServiceClient()
+```
+
+*   **Purpose:** This function creates and returns a Google Cloud Monitoring API client.
+*   **How it works:**
+    *   It defines the necessary OAuth scope for Cloud Monitoring (`'https://www.googleapis.com/auth/cloud-platform'`).
+    *   It creates a `google.cloud.monitoring_v3.MetricServiceClient` object and returns it.
+*   **Business Logic:** This function provides a simple way to get a client for interacting with the Cloud Monitoring API, enabling the application to write custom metrics.
+*   **Dependencies:**
+    *   `google.cloud.monitoring_v3.MetricServiceClient`
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   The function is very simple and could be inlined.
+    *   There's no error handling.  Creating the `MetricServiceClient` can fail (e.g., due to network issues or authentication problems).
+    *   The `target_service_account` parameter is not used. It's vestigial. If impersonation is intended, it should be implemented.
+
+**6. `list_jobs()`**
+
+```python
+def list_jobs():
+    logging.info(f"Listing Dataflow jobs")
+    df_service = _get_df_service()
+    response = (
+        df_service.projects()
+        .locations()
+        .jobs()
+        .list(projectId=PIPELINE_PROJECT_ID, location=DATAFLOW_REGION)
+        .execute()
+    )
+    jobs = response["jobs"]
+    return jobs
+```
+
+*   **Purpose:** This function lists all Dataflow jobs in a specified project and location.
+*   **How it works:**
+    *   It calls `_get_df_service()` to get a Dataflow service client.
+    *   It uses the Dataflow service client to make a `jobs.list` API call. This call retrieves a list of Dataflow jobs.
+        *   `projectId`: The ID of the Google Cloud project.
+        *   `location`: The region where the Dataflow jobs are running.
+    *   It extracts the list of jobs from the response (which is a JSON object) using `response["jobs"]`.
+    *   It returns the list of Dataflow jobs.
+*   **Business Logic:** This function provides a way to retrieve information about existing Dataflow jobs, which can be useful for monitoring, debugging, and managing Dataflow pipelines.
+*   **Dependencies:**
+    *   `_get_df_service()`
+    *   `PIPELINE_PROJECT_ID`, `DATAFLOW_REGION` (constants)
+    *   `logging` module.
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   Error handling is basic. If the API call fails, the program will crash. It would be better to catch exceptions and log the error.
+    *   The code assumes the API response will always have a "jobs" key. It should check if the key exists before accessing it.
+    *   The function lists *all* jobs. If there are many jobs, this can be slow. It might be useful to add filtering options (e.g., by job name or state).
+
+**7. `get_job_status(job_name)`**
+
+```python
+def get_job_status(job_name):
+    logging.info(job_name)
+    jobs = list_jobs()
+    job_status = None
+    for job in jobs:
+        job_nm = job["name"]
+        if job_nm.startswith(job_name):
+            logging.info(job["currentState"])
+            job_status = job["currentState"]
+            break;
+        else:
+            job_status= None
+    return job_status
+```
+
+*   **Purpose:** This function retrieves the status of a specific Dataflow job given its name.
+*   **How it works:**
+    *   It calls `list_jobs()` to get a list of all Dataflow jobs.
+    *   It iterates through the list of jobs.
+    *   For each job, it checks if the job's name (`job["name"]`) starts with the specified `job_name`.
+    *   If a matching job is found, it extracts the job's current state (`job["currentState"]`) and assigns it to `job_status`. The loop then breaks.
+    *   If no matching job is found, `job_status` remains `None`.
+    *   It returns the `job_status`.
+*   **Business Logic:** This function allows you to check the current status of a Dataflow job, such as whether it's running, finished, or failed. This is essential for monitoring the progress of your pipelines.
+*   **Dependencies:**
+    *   `list_jobs()`
+    *   `logging` module.
+*   **Cyclomatic Complexity:** Medium (3, due to the loop and the `if` statement).
+*   **Pain Points:**
+    *   It relies on string prefix matching (`job_nm.startswith(job_name)`), which might not be accurate if job names are similar. Consider using an exact match or a more sophisticated matching algorithm.
+    *   The function iterates through *all* jobs, even if a match is found early on. This can be inefficient if there are many jobs.
+    *   The function returns `None` if no matching job is found. It might be better to raise an exception in this case, indicating that the job does not exist.
+    *   There is no error handling when retrieving the job status in side the loop from `job["currentState"]`
+
+**8. `getImpersonatedCredentials(target_scopes, target_service_account, target_project)`**
 
 ```python
 def getImpersonatedCredentials(target_scopes: list, target_service_account: str, target_project: str):
@@ -59,52 +230,47 @@ def getImpersonatedCredentials(target_scopes: list, target_service_account: str,
     return target_credentials
 ```
 
-**Description:**
+*   **Purpose:**  This function is similar to `_get_impersonated_credentials`, but constructs the target principal in a specific format and sets a shorter lifetime.
+*   **How it works:**
+    *   It retrieves the default credentials using `google.auth._default.default(scopes=target_scopes)`.
+    *   It constructs the `target_principal` string by concatenating the `target_service_account`, `@`, `target_project`, and `.iam.gserviceaccount.com`. This is the standard format for a service account email address.
+    *   It creates impersonated credentials using `google.auth.impersonated_credentials.Credentials` with the `source_credentials`, the constructed `target_principal`, the `target_scopes`, and a lifetime of 600 seconds (10 minutes).
+    *   It returns the impersonated credentials.
+*   **Business Logic:** This function creates impersonated credentials for specific service accounts within a specified project, using the standard service account email format.
+*   **Dependencies:**
+    *   `google.auth._default.default`
+    *   `google.auth.impersonated_credentials.Credentials`
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   The lifetime is hardcoded to 600 seconds. This should be configurable.
+    *   It assumes the caller knows the required scopes. A more robust approach might involve fetching these scopes from a configuration or dynamically determining them based on the resource being accessed.
+    *   It constructs the target principal string. It's important to ensure that `target_service_account` does not include any malicious input which can lead to security breach.
 
-This function is very similar to `_get_impersonated_credentials`, but it constructs the `target_principal` differently by explicitly formatting it as an email address with the `target_project` included.
-
-**How it works:**
-
-1.  **Default Credentials:** Same as `_get_impersonated_credentials`.
-2.  **Impersonated Credentials:** It uses `google.auth.impersonated_credentials.Credentials` to create the impersonated credentials. The key difference is in the `target_principal`:
-    *   `target_principal`:  It explicitly creates the email address of the service account to impersonate by combining `target_service_account`, `target_project`, and the domain `.iam.gserviceaccount.com`.
-3.  **Return Value:** The function returns the `target_credentials`.
-
-**Business Logic:**
-
-This function provides a more explicit way to define the target service account.  It ensures that the full email address of the service account is used, which can be important in some environments or when dealing with cross-project service accounts.
-
-**Dependencies:** `google.auth`, `google.auth._default`, `google.auth.impersonated_credentials`, `logging`
-
-**Function 3: `main._get_storage_client(target_service_account, target_project)`**
+**9. `_cleanup_xcom(context, session)`**
 
 ```python
-def _get_storage_client(target_service_account: str, target_project: str):
-    from google.cloud import storage
-    target_scopes = ['https://www.googleapis.com/auth/cloud-platform']
-    credentials = None if TEST_RUN == "true" else _get_impersonated_credentials(target_scopes,
-                                                                                target_service_account)
-    return storage.Client(project=target_project,
-                          credentials=credentials)
+def _cleanup_xcom(context, session=None):
+    dag_id = context["dag"].dag_id
+    session.query(XCom).filter(XCom.dag_id == dag_id).delete()
 ```
 
-**Description:**
+*   **Purpose:** This function cleans up XCom entries for a specific DAG in Airflow.
+*   **How it works:**
+    *   It extracts the DAG ID from the Airflow `context` dictionary.
+    *   It uses the provided `session` (presumably an SQLAlchemy session connected to the Airflow metadata database) to query the `XCom` table.
+    *   It filters the XCom entries to only include those with the matching `dag_id`.
+    *   It deletes the filtered XCom entries.
+*   **Business Logic:** This function is used to remove old XCom data, which can help to prevent the Airflow metadata database from growing too large. It's a maintenance task that can improve the performance of the Airflow web UI and scheduler.
+*   **Dependencies:**
+    *   Airflow's `context` dictionary (containing `dag`).
+    *   Airflow's `XCom` model.
+    *   SQLAlchemy (for querying the database).
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   It directly accesses the Airflow metadata database, which might be fragile if the database schema changes. It is recommended to use Airflow's APIs.
+    *   It deletes *all* XCom entries for the DAG. It might be useful to add options for deleting XCom entries based on task ID or key.
 
-This function creates a Google Cloud Storage client, optionally using impersonated credentials.
-
-**How it works:**
-
-1.  **Conditional Credentials:** It checks the `TEST_RUN` environment variable. If `TEST_RUN` is "true", it sets `credentials` to `None`. Otherwise, it calls `_get_impersonated_credentials` (Function 1) to get the impersonated credentials.
-2.  **Storage Client Creation:** It creates a `google.cloud.storage.Client` using the specified `target_project` and the obtained `credentials`.
-3.  **Return Value:** The function returns the `storage.Client` object.
-
-**Business Logic:**
-
-This function provides a convenient way to obtain a Cloud Storage client.  It supports both test environments (where authentication might be disabled) and production environments (where impersonation is used for secure access).
-
-**Dependencies:** `google.cloud.storage`, `_get_impersonated_credentials`
-
-**Function 4: `main.get_bq_impersonated_client(target_service_account, target_project)`**
+**10. `get_bq_impersonated_client(target_service_account, target_project)`**
 
 ```python
 def get_bq_impersonated_client(target_service_account: str, target_project: str):
@@ -113,48 +279,22 @@ def get_bq_impersonated_client(target_service_account: str, target_project: str)
     return bigquery.Client(project=target_project, credentials=getImpersonatedCredentials(target_scopes, target_service_account, target_project))
 ```
 
-**Description:**
+*   **Purpose:** This function creates and returns a BigQuery client using impersonated credentials.
+*   **How it works:**
+    *   It defines the necessary OAuth scopes for BigQuery (`'https://www.googleapis.com/auth/cloud-platform'` and `'https://www.googleapis.com/auth/bigquery'`).
+    *   It calls `getImpersonatedCredentials` to get impersonated credentials for the specified service account and project.
+    *   It creates a `google.cloud.bigquery.Client` object, passing the `target_project` and the obtained `credentials`.
+    *   It returns the BigQuery client.
+*   **Business Logic:** This function simplifies the creation of a BigQuery client with impersonation. It's a reusable way to access BigQuery with the permissions of a specific service account, which can be useful for managing access control and auditing.
+*   **Dependencies:**
+    *   `google.cloud.bigquery.Client`
+    *   `getImpersonatedCredentials`
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   There's no error handling. If `getImpersonatedCredentials` fails or the `bigquery.Client` cannot be created, the program will crash.
+    *   The scopes are hardcoded.
 
-This function creates a BigQuery client using impersonated credentials.
-
-**How it works:**
-
-1.  **Target Scopes:** Defines the necessary scopes for BigQuery access.
-2.  **Impersonated Credentials:** Calls `getImpersonatedCredentials` (Function 2) to obtain the impersonated credentials.
-3.  **BigQuery Client Creation:** Creates a `google.cloud.bigquery.Client` using the specified `target_project` and the obtained `credentials`.
-4.  **Return Value:** Returns the `bigquery.Client` object.
-
-**Business Logic:**
-
-Similar to `_get_storage_client`, this function streamlines the process of obtaining a BigQuery client with impersonation. It ensures that the client is properly authenticated to perform BigQuery operations on behalf of the target service account.
-
-**Dependencies:** `google.cloud.bigquery`, `getImpersonatedCredentials`
-
-**Function 5: `main.get_metric_service_client(target_service_account)`**
-
-```python
-def get_metric_service_client(target_service_account: str):
-    target_scopes = ['https://www.googleapis.com/auth/cloud-platform']
-    return monitoring_v3.MetricServiceClient()
-```
-
-**Description:**
-
-This function creates a Cloud Monitoring client.
-
-**How it works:**
-
-1.  **Target Scopes:** Defines the necessary scopes for Cloud Monitoring access (though it's not actually used in creating the client, which is a potential issue).
-2.  **Metric Service Client Creation:** Creates a `google.cloud.monitoring_v3.MetricServiceClient`. Critically, it does *not* pass any credentials to the client.
-3.  **Return Value:** Returns the `monitoring_v3.MetricServiceClient` object.
-
-**Business Logic:**
-
-This function is intended to provide a client for interacting with Cloud Monitoring, allowing the DAG to create and manage custom metrics.
-
-**Dependencies:** `google.cloud.monitoring_v3`
-
-**Function 6: `main.create_custom_metrics(metric_type, project_id, resource_type, value_type, val)`**
+**11. `create_custom_metrics(metric_type, project_id, resource_type, value_type, val)`**
 
 ```python
 def create_custom_metrics(metric_type: str, project_id: str, resource_type: str, value_type: str, val):
@@ -182,265 +322,66 @@ def create_custom_metrics(metric_type: str, project_id: str, resource_type: str,
         logging.error("Error [{}] occurred while inserting/creating custom metric".format(str(ex)))
 ```
 
-**Description:**
+*   **Purpose:** This function creates and writes a custom metric to Google Cloud Monitoring.
+*   **How it works:**
+    *   It gets a Cloud Monitoring client using `get_metric_service_client`.
+    *   It constructs the project name in the format `"projects/{project_id}"`.
+    *   It creates a `monitoring_v3.TimeSeries` object, which represents a time series of metric data.
+        *   It sets the metric type by concatenating `CUSTOM_METRIC_DOMAIN` and the provided `metric_type`.
+        *   It sets metric labels for `application_name` and `workflow_name` to `DAGID`.
+        *   It sets the resource type and labels for `project_id`, `workflow_name`, and `location`.
+        *   It creates a `monitoring_v3.TimeInterval` object representing the time range for the metric data.
+        *   It creates a `monitoring_v3.Point` object containing the metric value. The `value_type` (e.g., `"int64_value"`, `"double_value"`) determines how the value is stored.
+        *   It adds the `point` to the `series.points` list.
+    *   It calls `client.create_time_series` to write the time series data to Cloud Monitoring.
+    *   If any exception occurs, it logs the error.
+*   **Business Logic:** This function allows you to track custom metrics specific to your application or pipeline. This is crucial for monitoring performance, identifying issues, and making data-driven decisions.
+*   **Dependencies:**
+    *   `get_metric_service_client`
+    *   `google.cloud.monitoring_v3.TimeSeries`, `TimeInterval`, `Point`
+    *   `CUSTOM_METRIC_DOMAIN`, `DAGID`, `COMPOSER_SERVICE_ACCOUNT` (constants)
+    *   `logging` module.
+*   **Cyclomatic Complexity:** Low (1, excluding the exception handling).
+*   **Pain Points:**
+    *   The function catches *all* exceptions, which might mask specific errors that should be handled differently.
+    *   It relies on several global constants (`CUSTOM_METRIC_DOMAIN`, `DAGID`, `COMPOSER_SERVICE_ACCOUNT`), which makes the function less reusable.
+    *   The location is hardcoded to `"us-central1"`.
+    *   It is important to validate the metric_type and value_type parameters to prevent injection attacks or invalid metric data.
 
-This function creates and inserts a custom metric into Cloud Monitoring.
-
-**How it works:**
-
-1.  **Metric Service Client:** Retrieves a `MetricServiceClient` using `get_metric_service_client` (Function 5).
-2.  **Time Series Creation:** Constructs a `monitoring_v3.TimeSeries` object, which represents the metric data to be written.  It sets the metric type, labels (application and workflow names), resource type (e.g., `cloud_composer_environment`), resource labels (project ID, workflow name, location), and the actual data point.
-3.  **Data Point Creation:** Creates a `monitoring_v3.Point` to hold the metric value. The `value_type` parameter determines the data type of the value (e.g., `int64_value`, `double_value`).
-4.  **Time Interval:** Sets the time interval for the metric data point.
-5.  **Metric Insertion:** Calls `client.create_time_series` to write the metric data to Cloud Monitoring.
-6.  **Error Handling:** Includes a `try...except` block to catch any exceptions during the metric creation process.
-
-**Business Logic:**
-
-This function allows the DAG to track its performance, progress, and any other relevant metrics. By creating custom metrics, you can gain insights into the DAG's behavior and identify potential issues.
-
-**Dependencies:** `get_metric_service_client`, `google.cloud.monitoring_v3`, `time`, `logging`
-
-**Function 7: `main._get_default_or_from_dag_run(default_value, dag_key, dag_run_conf)`**
-
-```python
-def _get_default_or_from_dag_run(default_value: str, dag_key, dag_run_conf):
-    if dag_run_conf is not None and dag_key in dag_run_conf:
-        return dag_run_conf[dag_key]
-    return default_value
-```
-
-**Description:**
-
-This function retrieves a value either from the DAG run configuration or from a default value.
-
-**How it works:**
-
-1.  **Check DAG Run Configuration:** It checks if `dag_run_conf` is not `None` and if the specified `dag_key` exists in the `dag_run_conf` dictionary.
-2.  **Return Value:** If the `dag_key` is found in the `dag_run_conf`, the corresponding value is returned. Otherwise, the `default_value` is returned.
-
-**Business Logic:**
-
-This function allows users to override default DAG parameters at runtime through the DAG run configuration. This provides flexibility in controlling the DAG's behavior without modifying the code.
-
-**Dependencies:** None
-
-**Function 8: `main._setup_processing(**context)`**
+**12. `get_job_metrics(job_id)`**
 
 ```python
-def _setup_processing(**context):
-    logging.info(f"Starting DAG [{DAGID}-{RELEASE_RAW}]")
-    logging.info("Preparing partition")
-    logging.info(f"Context [{context}]")
-    execution_dt_utc = context["logical_date"]
-    logging.info(f"Execution datetime [{execution_dt_utc}] UTC")
-
-    task_instance = context["task_instance"]
-    dag_run = context["dag_run"]
-    dag_run_conf = dag_run.conf if dag_run else None
-
-    gcs_landing_bucket_name = _get_default_or_from_dag_run(GCS_LANDING_BUCKET_NAME, DAG_PARAM_GCS_LANDING_BUCKET_NAME,
-                                                           dag_run_conf)
-    gcs_landing_bucket_path = _get_default_or_from_dag_run(GCS_LANDING_BUCKET_PATH, DAG_PARAM_GCS_LANDING_BUCKET_PATH,
-                                                           dag_run_conf)
-    gcs_archive_bucket_name = _get_default_or_from_dag_run(GCS_ARCHIVE_BUCKET_NAME, DAG_PARAM_GCS_ARCHIVE_BUCKET_NAME,
-                                                           dag_run_conf)
-    gcs_archive_bucket_path = _get_default_or_from_dag_run(GCS_ARCHIVE_BUCKET_PATH, DAG_PARAM_GCS_ARCHIVE_BUCKET_PATH,
-                                                           dag_run_conf)
-    gcs_staging_bucket_name = _get_default_or_from_dag_run(GCS_STAGING_BUCKET_NAME, DAG_PARAM_GCS_STAGING_BUCKET_NAME,
-                                                           dag_run_conf)
-    gcs_staging_bucket_path = _get_default_or_from_dag_run(GCS_STAGING_BUCKET_PATH, DAG_PARAM_GCS_STAGING_BUCKET_PATH,
-                                                           dag_run_conf)
-    num_past_hours = _get_default_or_from_dag_run(DEFAULT_NUM_HOURS, DAG_PARAM_NUM_PAST_HOURS, dag_run_conf)
-
-
-    logging.info(f"Landing bucket name [{gcs_landing_bucket_name}]")
-    logging.info(f"Landing bucket path [{gcs_landing_bucket_path}]")
-    logging.info(f"Staging bucket name [{gcs_staging_bucket_name}]")
-    logging.info(f"Staging bucket path [{gcs_staging_bucket_path}]")
-    logging.info(f"Archive bucket name [{gcs_archive_bucket_name}]")
-    logging.info(f"Archive bucket path [{gcs_archive_bucket_path}]")
-    logging.info(f"Num past hours [{num_past_hours}]")
-
-    if dag_run_conf is not None and DAG_PARAM_RUN_ID in dag_run_conf:
-        run_id = dag_run_conf[DAG_PARAM_RUN_ID]
-        reprocessing_flag = True
-        logging.info(f"Using RUN ID from user [{run_id}]")
-    else:
-        run_id = f"{execution_dt_utc.year:04}{execution_dt_utc.month:02}{execution_dt_utc.day:02}{execution_dt_utc.hour:02}{execution_dt_utc.minute:02}"
-        reprocessing_flag = False
-        logging.info(f"Creating new RUN ID [{run_id}]")
-
-    gcs_run_path = f"{gcs_staging_bucket_path}/{run_id}"
-    gcs_run_full_path = f"{gcs_staging_bucket_name}/{gcs_run_path}"
-    logging.info(f"Full RUN path on GCS [{gcs_run_full_path}]")
-
-    job_name = f"{DF_JOB_NAME}-{run_id}"
-    logging.info(f"Job name [{job_name}]")
-
-    task_instance.xcom_push(key=TASK_PARAM_LANDING_BUCKET_NAME, value=gcs_landing_bucket_name)
-    task_instance.xcom_push(key=TASK_PARAM_LANDING_BUCKET_PATH, value=gcs_landing_bucket_path)
-    task_instance.xcom_push(key=TASK_PARAM_ARCHIVE_BUCKET_NAME, value=gcs_archive_bucket_name)
-    task_instance.xcom_push(key=TASK_PARAM_ARCHIVE_BUCKET_PATH, value=gcs_archive_bucket_path)
-    task_instance.xcom_push(key=TASK_PARAM_RUN_BUCKET_NAME, value=gcs_staging_bucket_name)
-    task_instance.xcom_push(key=TASK_PARAM_RUN_BUCKET_PATH, value=gcs_run_path)
-    task_instance.xcom_push(key=TASK_PARAM_RUN_PATH_FULL, value=gcs_run_full_path)
-    task_instance.xcom_push(key=TASK_PARAM_REPROCESSING, value=reprocessing_flag)
-    task_instance.xcom_push(key=TASK_PARAM_JOB_NAME, value=job_name)
-    task_instance.xcom_push(key=TASK_PARAM_NUM_PAST_HOURS, value=num_past_hours)
-```
-
-**Description:**
-
-This function sets up the processing environment for the DAG.  It retrieves configuration parameters, generates a unique run ID, and pushes these parameters to XCom for use by subsequent tasks.
-
-**How it works:**
-
-1.  **Logging:** Logs the start of the DAG and some context information.
-2.  **DAG Run Configuration:** Retrieves the `dag_run_conf` from the `context`.
-3.  **Parameter Retrieval:** Uses `_get_default_or_from_dag_run` (Function 7) to retrieve various configuration parameters, such as bucket names, bucket paths, and the number of past hours to process.
-4.  **Run ID Generation:** Generates a unique run ID based on the execution datetime. If a `RUN_ID` is provided in the `dag_run_conf`, it is used instead, and a `reprocessing_flag` is set to `True`.
-5.  **Path Construction:** Constructs the full GCS path for the run.
-6.  **Job Name Generation:** Creates a job name for the Dataflow job.
-7.  **XCom Push:** Pushes the retrieved and generated parameters to XCom, making them available to downstream tasks.
-
-**Business Logic:**
-
-This function centralizes the configuration and setup logic for the DAG. It ensures that all subsequent tasks have access to the necessary parameters and that a consistent run ID is used throughout the workflow. The use of XCom allows for loose coupling between tasks. The DAG's overall function is to process data, likely PNR data (Passenger Name Record), ingest it, perform transformations using Dataflow, and archive it. This setup is critical for ensuring each DAG run is uniquely identifiable and properly configured.
-
-**Dependencies:** `_get_default_or_from_dag_run`, `logging`
-
-**Function 9: `main._is_reprocessing(**context)`**
-
-```python
-def _is_reprocessing(**context):
-    reprocess_flag = context['ti'].xcom_pull(key=TASK_PARAM_REPROCESSING, task_ids=TASK_SETUP_PROCESSING)
-    logging.info(f"Is reprocessing required [{reprocess_flag}]")
-    return TASK_PREPARE_STAGING if not reprocess_flag else TASK_SKIP_PREPARE_STAGING
-```
-
-**Description:**
-
-This function determines whether reprocessing is required based on the `reprocessing_flag` stored in XCom.
-
-**How it works:**
-
-1.  **XCom Pull:** Retrieves the `reprocessing_flag` from XCom, which was pushed by the `_setup_processing` task.
-2.  **Conditional Return:** Returns either `TASK_PREPARE_STAGING` or `TASK_SKIP_PREPARE_STAGING` based on the value of `reprocess_flag`. This is used to control the DAG's execution path.
-
-**Business Logic:**
-
-This function enables the DAG to handle reprocessing scenarios differently. If reprocessing is required, it might skip certain tasks (e.g., preparing the staging area) and proceed directly to processing the data. This is important for handling data updates or corrections.
-
-**Dependencies:** `logging`
-
-**Function 10: `main._get_gcs_files(bucket_name, gcs_path, **context)`**
-
-```python
-def _get_gcs_files(bucket_name: str, gcs_path: str, **context):
-    logging.info(
-        f"Listing files in [{bucket_name}/{gcs_path}]...")
-    gcs_list_objects = GCSListObjectsOperator(
-        task_id='list_gcs_files' + str(uuid.uuid4()),
-        bucket=bucket_name,
-        prefix=gcs_path,
-        match_glob="**/*" + DELIMITER,
-        impersonation_chain=None if TEST_RUN == "true" else DATAFLOW_SERVICE_ACCOUNT,
-        dag=dag
+def get_job_metrics(job_id):
+    df_service = _get_df_service()
+    response = (
+        df_service.projects()
+        .locations()
+        .jobs()
+        .getMetrics(projectId=PIPELINE_PROJECT_ID, location=DATAFLOW_REGION, jobId=job_id)
+        .execute()
     )
-    files = gcs_list_objects.execute(context)
-    logging.info(
-        f"Found [{len(files)}] files in [{bucket_name}/{gcs_path}]")
-    return files
+    metrics = response
+    return metrics
 ```
 
-**Description:**
+*   **Purpose:** This function retrieves metrics for a specific Dataflow job.
+*   **How it works:**
+    *   It gets a Dataflow service client using `_get_df_service()`.
+    *   It uses the Dataflow service client to make a `jobs.getMetrics` API call.
+        *   `projectId`: The ID of the Google Cloud project.
+        *   `location`: The region where the Dataflow job is running.
+        *   `jobId`: The ID of the Dataflow job.
+    *   It returns the raw API response containing the job metrics.
+*   **Business Logic:** This function allows you to access detailed metrics about a Dataflow job, such as the number of records processed, CPU usage, and memory consumption. This information is essential for monitoring the performance and efficiency of your Dataflow pipelines.
+*   **Dependencies:**
+    *   `_get_df_service()`
+    *   `PIPELINE_PROJECT_ID`, `DATAFLOW_REGION` (constants)
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   Error handling is missing. If the API call fails, the program will crash. It's better to catch exceptions and log the error.
+    *   The function returns the raw API response. It might be useful to parse the response and return a more structured representation of the metrics.
 
-This function lists files in a Google Cloud Storage bucket under the specified path using the `GCSListObjectsOperator`.
-
-**How it works:**
-
-1.  **GCSListObjectsOperator:** Creates a `GCSListObjectsOperator` task to list the files.
-    *   `bucket`: The name of the GCS bucket.
-    *   `prefix`: The path within the bucket to list.
-    *   `match_glob`: The glob pattern to match filenames. `**/*` matches all files and directories recursively. The `DELIMITER` constant is appended.
-    * `impersonation_chain`: Configures the operator to impersonate the `DATAFLOW_SERVICE_ACCOUNT` if not in test mode.
-2.  **Task Execution:** Executes the `GCSListObjectsOperator` task using the provided `context`.
-3.  **Return Value:** Returns a list of filenames found in the bucket and matching the specified glob pattern.
-
-**Business Logic:**
-
-This function is a crucial step in the data ingestion process. It identifies the files that need to be processed by the DAG.
-
-**Dependencies:** `GCSListObjectsOperator`, `logging`, `uuid`
-
-**Function 11: `main._prepare_staging()`**
-
-```python
-def _prepare_staging(**context):
-    ti = context['ti']
-    gcs_landing_bucket_name = ti.xcom_pull(key=TASK_PARAM_LANDING_BUCKET_NAME, task_ids=TASK_SETUP_PROCESSING)
-    gcs_landing_bucket_path = ti.xcom_pull(key=TASK_PARAM_LANDING_BUCKET_PATH, task_ids=TASK_SETUP_PROCESSING)
-    gcs_run_bucket_name = ti.xcom_pull(key=TASK_PARAM_RUN_BUCKET_NAME, task_ids=TASK_SETUP_PROCESSING)
-    gcs_run_bucket_path = ti.xcom_pull(key=TASK_PARAM_RUN_BUCKET_PATH, task_ids=TASK_SETUP_PROCESSING)
-    num_past_hours = ti.xcom_pull(key=TASK_PARAM_NUM_PAST_HOURS, task_ids=TASK_SETUP_PROCESSING)
-
-    dag_vars = get_dag_vars()
-    #num_past_hours = get_dag_var_as_int(VAR_AS_NUM_PAST_HOURS, dag_vars)
-    max_files = get_dag_var_as_int(VAR_AS_MAX_FILES, dag_vars)
-
-    logging.info(f"Landing bucket name [{gcs_landing_bucket_name}]")
-    logging.info(f"Landing bucket path [{gcs_landing_bucket_path}]")
-    logging.info(f"Run bucket name [{gcs_run_bucket_name}]")
-    logging.info(f"Run bucket path [{gcs_run_bucket_path}]")
-    logging.info(f"Num past hours [{num_past_hours}]")
-    logging.info(f"Max files [{max_files}]")
-
-    logging.info(f"Getting landing files...")
-    landing_files = _get_gcs_files(gcs_landing_bucket_name, gcs_landing_bucket_path, **context)
-    logging.info(f"Got [{len(landing_files)}] landing files")
-
-    all_selected_landing_files = select_files(landing_files, gcs_landing_bucket_path + "/", int(num_past_hours))
-    logging.info(f"Selected [{len(all_selected_landing_files)}] landing files")
-    if 0 < max_files < len(all_selected_landing_files):
-        selected_landing_files = all_selected_landing_files[:max_files]
-    else:
-        selected_landing_files = all_selected_landing_files
-    logging.info(f"Limited selected landing files to [{len(selected_landing_files)}]")
-    size =len(selected_landing_files)
-    if len(selected_landing_files) == 0:
-        create_custom_metrics(f"pnr_input_file_count{SUFFIX}", COMPOSER_PROJECT_ID, "cloud_composer_workflow",
-                              "int64_value", 0)
-        logging.error(f"No files in landing [{gcs_landing_bucket_name}/{gcs_landing_bucket_path}]")
-        raise AirflowFailException(f"No files in landing [{gcs_landing_bucket_name}/{gcs_landing_bucket_path}]")
-
-    _move_landing_to_staging(gcs_landing_bucket_name, selected_landing_files, gcs_run_bucket_name, gcs_run_bucket_path,
-                             gcs_landing_bucket_path, **context)
-    create_custom_metrics(f"pnr_input_file_count{SUFFIX}", COMPOSER_PROJECT_ID, "cloud_composer_workflow",
-                          "int64_value", size)
-```
-
-**Description:**
-
-This function prepares the staging area by retrieving files from the landing bucket, selecting the files to be processed and moving them to the staging bucket.
-
-**How it works:**
-
-1.  **XCom Pull:** Retrieves parameters from XCom, including bucket names, bucket paths, and the number of past hours to process.
-2.  **Get Landing Files:** Calls `_get_gcs_files` (Function 10) to retrieve a list of files from the landing bucket.
-3.  **Select Files:** Calls a function named `select_files` (not provided in the code) to select the files to be processed based on a time window (`num_past_hours`).
-4.  **Limit File Count:** Limits the number of selected files based on the `max_files` parameter.
-5.  **Error Handling:** If no files are found, it logs an error, creates a custom metric indicating a zero file count, and raises an `AirflowFailException`, causing the DAG to fail.
-6.  **Move to Staging:** Calls `_move_landing_to_staging` (Function 13) to move the selected files from the landing bucket to the staging bucket.
-7.  **Create Custom Metric:** Creates a custom metric to track the number of input files processed.
-
-**Business Logic:**
-
-This function ensures that only the relevant files are processed by the DAG. It filters the files based on a time window and limits the number of files to prevent overloading the processing pipeline.  The explicit error handling prevents the DAG from silently failing when no data is available.
-
-**Dependencies:** `_get_gcs_files`, `_move_landing_to_staging`, `create_custom_metrics`, `select_files`, `get_dag_vars`, `get_dag_var_as_int`
-
-**Function 12: `main._move_blobs(bucket_name, blob_names, destination_bucket_name, destination_prefix)`**
+**13. `_move_blobs(bucket_name, blob_names, destination_bucket_name, destination_prefix)`**
 
 ```python
 def _move_blobs(bucket_name: str, blob_names: list, destination_bucket_name: str,
@@ -470,26 +411,73 @@ def _move_blobs(bucket_name: str, blob_names: list, destination_bucket_name: str
     logging.info(f"Moved blobs from file [{tmp_file}] to [{destination_bucket_name}/{destination_prefix}]")
 ```
 
-**Description:**
+*   **Purpose:** This function moves a list of blobs from one Cloud Storage bucket to another using the `gsutil` command-line tool.
+*   **How it works:**
+    *   It logs the source and destination buckets and prefix.
+    *   It creates a temporary file (`/tmp/pnr{SUFFIX}_file_copy_{time_millis}.txt`) to store the list of blobs to move.
+    *   It writes each blob's full GCS path (`gs://{bucket_name}/{blob_name}`) to the temporary file.
+    *   It constructs a `gsutil mv` command that reads the list of blobs from the temporary file and moves them to the destination bucket and prefix.
+        *   It dynamically adjusts the `gsutil` path and impersonation options based on the `TEST_RUN` flag.
+    *   It executes the `gsutil` command using Airflow's `BashOperator`. This ensures that the move operation is tracked by Airflow.
+    *   It removes the temporary file.
+*   **Business Logic:** This function provides a mechanism for moving files in Cloud Storage, which is a common operation in data pipelines for staging, archiving, and cleaning up data.
+*   **Dependencies:**
+    *   `os` module.
+    *   `time` module.
+    *   `uuid` module.
+    *   Airflow's `BashOperator`.
+    *   `TEST_RUN`, `DATAFLOW_SERVICE_ACCOUNT`, `SUFFIX` (constants).
+*   **Cyclomatic Complexity:** Medium (2, due to the `if` statement and the loop).
+*   **Pain Points:**
+    *   The function relies on the `gsutil` command-line tool, which is an external dependency. It might be more robust to use the Cloud Storage client library directly.
+    *   Creating a temporary file and using `cat` to pipe the file contents to `gsutil` is inefficient. Consider using `gsutil -m mv` with the blob names directly.
+    *   Error handling is limited. If the `gsutil` command fails, the Airflow task will fail, but the error message might not be very informative.
+    *   The logic for determining the `gsutil` path and impersonation options based on the `TEST_RUN` flag is not ideal. Environment variables or configuration files would be a better approach.
+    *   There is no validation to check that the blob names exists before trying to move them.
 
-This function moves blobs (files) from one Google Cloud Storage bucket/path to another using the `gsutil mv` command executed via the `BashOperator`.
+**14. `_get_gcs_files(bucket_name, gcs_path)`**
 
-**How it works:**
+```python
+def _get_gcs_files(bucket_name: str, gcs_path: str, **context):
+    logging.info(
+        f"Listing files in [{bucket_name}/{gcs_path}]...")
+    gcs_list_objects = GCSListObjectsOperator(
+        task_id='list_gcs_files' + str(uuid.uuid4()),
+        bucket=bucket_name,
+        prefix=gcs_path,
+        match_glob="**/*" + DELIMITER,
+        impersonation_chain=None if TEST_RUN == "true" else DATAFLOW_SERVICE_ACCOUNT,
+        dag=dag
+    )
+    files = gcs_list_objects.execute(context)
+    logging.info(
+        f"Found [{len(files)}] files in [{bucket_name}/{gcs_path}]")
+    return files
+```
 
-1.  **Logging:** Logs the source and destination of the move operation.
-2.  **Temporary File Creation:** Creates a temporary file to store the list of blobs to be moved.
-3.  **Blob List Population:** Writes the full GCS paths of each blob to the temporary file.
-4.  **`gsutil` Command Construction:** Constructs the `gsutil mv` command to move the blobs.  It uses the `-m` flag for parallel execution and `-I` to read the list of blobs from the temporary file. It adds impersonation and state directory options.
-5.  **BashOperator Execution:** Executes the `gsutil` command using the `BashOperator`.
-6.  **Temporary File Deletion:** Deletes the temporary file.
+*   **Purpose:** This function lists files in a Cloud Storage bucket and path using Airflow's `GCSListObjectsOperator`.
+*   **How it works:**
+    *   It logs the bucket and path being listed.
+    *   It creates a `GCSListObjectsOperator` task:
+        *   `bucket`: The name of the Cloud Storage bucket.
+        *   `prefix`: The path within the bucket to list.
+        *   `match_glob`: A glob pattern to match files. `**/*` matches all files recursively, and `DELIMITER` is appended.
+        *   `impersonation_chain`: Sets the service account to impersonate, or `None` if `TEST_RUN == "true"`.
+    *   It executes the `GCSListObjectsOperator` using `execute(context)`, which returns a list of file names that match the specified criteria.
+    *   It logs the number of files found.
+    *   It returns the list of files.
+*   **Business Logic:** This function is used to discover files in Cloud Storage, which is a common requirement for data pipelines. The `GCSListObjectsOperator` simplifies this process by providing a dedicated Airflow operator for listing GCS objects.
+*   **Dependencies:**
+    *   Airflow's `GCSListObjectsOperator`.
+    *   `TEST_RUN`, `DATAFLOW_SERVICE_ACCOUNT`, `DELIMITER` (constants).
+*   **Cyclomatic Complexity:** Low (1).
+*   **Pain Points:**
+    *   The function relies on `GCSListObjectsOperator`, which is tightly coupled to Airflow.
+    *   Error handling is limited. If the `GCSListObjectsOperator` fails, the Airflow task will fail, but the error message might not be very informative.
+    *   The glob pattern `**/*` is very broad. This could be slow if there are many files in the bucket and path. Consider using a more specific glob pattern.
+    *   Reliance on global variables `TEST_RUN`, `DATAFLOW_SERVICE_ACCOUNT`, `DELIMITER`.
 
-**Business Logic:**
-
-This function provides a reliable way to move files within Google Cloud Storage.  The use of `gsutil` with parallel execution (`-m`) improves performance for large file transfers.
-
-**Dependencies:** `BashOperator`, `logging`, `time`, `os`, `uuid`
-
-**Function 13: `main._move_landing_to_staging(source_bucket, source_objects, destination_bucket, destination_path, source_path)`**
+**15. `_move_landing_to_staging(source_bucket, source_objects, destination_bucket, destination_path, source_path)`**
 
 ```python
 def _move_landing_to_staging(source_bucket: str, source_objects: list, destination_bucket: str, destination_path: str,
@@ -501,52 +489,7 @@ def _move_landing_to_staging(source_bucket: str, source_objects: list, destinati
         f"Moved [{len(source_objects)}] landing files from [{source_bucket}/{source_path}] to staging [{destination_bucket}/{destination_path}]")
 ```
 
-**Description:**
-
-This function moves files from the landing bucket to the staging bucket using the `_move_blobs` function.
-
-**How it works:**
-
-1.  **Logging:** Logs the source and destination of the move operation.
-2.  **Move Blobs:** Calls `_move_blobs` (Function 12) to perform the actual file transfer.
-3.  **Logging:** Logs the completion of the move operation.
-
-**Business Logic:**
-
-This function encapsulates the logic for moving files from the landing area to the staging area, separating concerns. This is a standard ETL pattern.
-
-**Dependencies:** `_move_blobs`, `logging`
-
-**Function 14: `main._get_df_service()`**
-
-```python
-def _get_df_service():
-    df_service = build("dataflow", "v1b3", cache_discovery=False)
-    logging.info("df service [{}]".format(df_service))
-    return df_service
-```
-
-**Description:**
-
-This function creates a Dataflow service client.
-
-**How it works:**
-
-1.  **Dataflow Service Client Creation:** Uses the `googleapiclient.discovery.build` function to create a Dataflow service client. It specifies the API name (`dataflow`), the API version (`v1b3`), and disables API discovery caching.
-2.  **Logging:** Logs the Dataflow service object.
-3.  **Return Value:** Returns the Dataflow service client.
-
-**Business Logic:**
-
-This function provides a reusable way to obtain a Dataflow service client, which is needed to interact with the Dataflow API (e.g., to list jobs, get job metrics).
-
-**Dependencies:** `googleapiclient.discovery`, `logging`
-
-**Function 15: `main.list_jobs()`**
-
-```python
-def list_jobs():
-    logging.
+*   **Purpose:** This function moves files from a landing bucket to a staging bucket using the
 ## UML Diagram
 ![Image](images/anotherDAG_img1.png)
 ## DAG FLOW
