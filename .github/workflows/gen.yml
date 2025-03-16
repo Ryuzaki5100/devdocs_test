@@ -51,11 +51,11 @@ jobs:
           --verbose
         shell: cmd
 
-      - name: Generate java_files.txt
+      - name: Generate source_files.txt
         run: batch_files\generateFileStructure.bat
         shell: cmd
 
-      - name: Print java_files.txt
+      - name: Print source_files.txt
         run: type batch_files\source_files.txt
         shell: cmd
 
