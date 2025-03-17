@@ -591,8 +591,8 @@ process_staging_task = PythonOperator(
 
 move_to_archive_task = PythonOperator(
     task_id=TASK_MOVE_TO_ARCHIVE,
-    python_callable=_move_to_archive,
-    dag=dag
+    python_callable = _move_to_archive,
+    dag = dag
 )
 
 
