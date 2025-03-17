@@ -51,11 +51,11 @@ jobs:
           --verbose
         shell: cmd
 
-      - name: Generate java_files.txt
+      - name: Generate source_files.txt
         run: batch_files\generateFileStructure.bat
         shell: cmd
 
-      - name: Print java_files.txt
+      - name: Print source_files.txt
         run: type batch_files\source_files.txt
         shell: cmd
 
@@ -73,7 +73,7 @@ jobs:
 
       - name: Fetch Output JSON from API
         run: |
-          curl -k -X POST "https://73f8-2401-4900-65a7-e0c8-1428-e71c-3cf-3631.ngrok-free.app/postChunks" ^
+          curl -k -X POST "https://765f-2401-4900-65c3-21a2-d0ec-a372-7258-84b8.ngrok-free.app/postChunks" ^
             -H "Content-Type: application/json" ^
             --data "@batch_files\chunks.json" ^
             --output "batch_files\output.json" ^
