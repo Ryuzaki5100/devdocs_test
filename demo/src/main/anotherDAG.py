@@ -583,8 +583,8 @@ is_reprocessing_task = BranchPythonOperator(
 )
 
 process_staging_task = PythonOperator(
-    task_id=TASK_PROCESS_STAGING,
-    python_callable=_process_staging,
+    task_id = TASK_PROCESS_STAGING,
+    python_callable = _process_staging,
     trigger_rule=TriggerRule.NONE_FAILED_OR_SKIPPED,
     dag=dag
 )
