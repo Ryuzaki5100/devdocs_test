@@ -1,388 +1,517 @@
 ﻿# Generated Documentation with UML
-Okay, here's the detailed documentation of the functions, following their likely execution order based on dependencies, along with explanations, business logic insights, cyclomatic complexity considerations, and potential pain points.
+```python
+def getImpersonatedCredentials(target_scopes: list, target_service_account: str, target_project: str):
+    from google.auth import _default
+    source_credentials, project_id = _default.default(scopes=target_scopes)
 
-**Assumptions:**
+    from google.auth import impersonated_credentials
+    target_credentials = impersonated_credentials.Credentials(
+        source_credentials=source_credentials,
+        target_principal=f'{target_service_account}@{target_project}.iam.gserviceaccount.com',
+        target_scopes=target_scopes,
+        lifetime=600)
+    return target_credentials
 
-*   I'm assuming `main` refers to a module or a class where these functions are defined.
-*   I'm assuming certain global variables like `DAGID`, `RELEASE_RAW`, `GCS_LANDING_BUCKET_NAME`, etc., are defined elsewhere in the code.
-*   I'm using placeholders for `func1`, `func2`, etc., and will map them to the corresponding function names as I go through the documentation.
+def _get_default_or_from_dag_run(default_value: str, dag_key, dag_run_conf):
+    if dag_run_conf is not None and dag_key in dag_run_conf:
+        return dag_run_conf[dag_key]
+    return default_value
 
-**Dependencies Mapping**
-* `func1` is `_cleanup_xcom`
-* `func2` is `_get_impersonated_credentials`
-* `func3` is `_get_default_or_from_dag_run`
-* `func4` is `_setup_processing`
-* `func5` is `_get_gcs_files`
-* `func6` is `get_metric_service_client`
-* `func7` is `_move_blobs`
-* `func8` is `_get_storage_client`
-* `func9` is `getImpersonatedCredentials`
-* `func10` is `create_custom_metrics`
-* `func11` is `_is_reprocessing`
-* `func12` is `_get_df_service`
-* `func13` is `get_job_metrics`
-* `func14` is `list_jobs`
-* `func15` is `_move_to_archive`
-* `func16` is `get_bq_impersonated_client`
-* `func17` is `get_job_id`
-* `func18` is `_move_landing_to_staging`
-* `func19` is `_prepare_staging`
-* `func20` is `get_time_diff_between_processed_tm_vs_current_time`
-* `func21` is `get_job_status`
-* `func22` is `get_valid_record_count`
-* `func23` is `_process_staging`
+def _get_impersonated_credentials(target_scopes: list, target_service_account: str):
+    from google.auth import _default
+    source_credentials, project_id = _default.default(scopes=target_scopes)
+    logging.info(f"Source credentials generated for project [{project_id}]")
 
-**Function Documentation:**
+    from google.auth import impersonated_credentials
+    target_credentials = impersonated_credentials.Credentials(
+        source_credentials=source_credentials,
+        target_principal=target_service_account,
+        target_scopes=target_scopes,
+        lifetime=60 * 60)
+    return target_credentials
 
-1.  **`_get_default_or_from_dag_run(default_value, dag_key, dag_run_conf)`**
+def _get_storage_client(target_service_account: str, target_project: str):
+    from google.cloud import storage
+    target_scopes = ['https://www.googleapis.com/auth/cloud-platform']
+    credentials = None if TEST_RUN == "true" else _get_impersonated_credentials(target_scopes,
+                                                                                target_service_account)
+    return storage.Client(project=target_project,
+                          credentials=credentials)
 
-    *   **Purpose:** This function retrieves a configuration value, prioritizing values passed in the Airflow DAG run configuration (`dag_run_conf`). If the `dag_key` is found in the DAG run configuration, its value is returned. Otherwise, the `default_value` is returned.
-    *   **How it works:** It checks if `dag_run_conf` is not `None` and if the `dag_key` exists within it. If both conditions are true, it returns the value associated with that key from the configuration. Otherwise, it falls back to the provided `default_value`.
-    *   **Business Logic:** This function allows for flexibility in DAG execution. It enables users to override default configuration parameters at runtime through the Airflow UI or API, without modifying the DAG code itself.  This is especially useful for things like bucket names, paths, and processing parameters that might change between executions.
-    *   **Cyclomatic Complexity:** Low (2).  It's a simple conditional.
-    *   **Potential Pain Points:** None anticipated, its simple and straight forward
+def _setup_processing(**context):
+    logging.info(f"Starting DAG [{DAGID}-{RELEASE_RAW}]")
+    logging.info("Preparing partition")
+    logging.info(f"Context [{context}]")
+    execution_dt_utc = context["logical_date"]
+    logging.info(f"Execution datetime [{execution_dt_utc}] UTC")
 
-2.  **`_setup_processing(**context)`**
+    task_instance = context["task_instance"]
+    dag_run = context["dag_run"]
+    dag_run_conf = dag_run.conf if dag_run else None
 
-    *   **Purpose:** This function is responsible for setting up the processing environment for the DAG run.  This includes extracting configuration values, generating a unique run ID, and pushing these values into Airflow's XCom (cross-communication) system for use by downstream tasks.
-    *   **How it works:**
-        *   It first logs the start of the DAG and the execution datetime.
-        *   It retrieves the DAG run configuration (`dag_run.conf`) from the Airflow context.
-        *   It calls `_get_default_or_from_dag_run` to get values for various parameters like landing/archive/staging bucket names and paths, and the number of past hours to process. These values can come from defaults or be overridden by the DAG run configuration.
-        *   It generates a unique `run_id` based on the execution datetime, unless a `run_id` is already provided in the DAG run configuration (in which case, it's considered a reprocessing scenario).
-        *   It constructs the full GCS path for the run (`gcs_run_full_path`).
-        *   It generates a job name (`job_name`) for the Dataflow job.
-        *   It uses `task_instance.xcom_push` to push all these parameters (bucket names, paths, `run_id`, `reprocessing_flag`, `job_name`, `num_past_hours`) into XCom.  These values become available to other tasks in the DAG.
-    *   **Business Logic:** This function acts as the initialization step of the DAG. It ensures all necessary configuration and parameters are correctly set up and shared between tasks. The `run_id` generation and handling of reprocessing scenarios are key aspects of managing data processing runs.
-    *   **Cyclomatic Complexity:** Moderate.  There are multiple `if` statements, especially around reading from the `dag_run_conf`.
-    *   **Potential Pain Points:**
-        *   **XCom limitations:**  XCom is suitable for small to medium-sized data.  If the configuration data becomes very large, consider alternative storage mechanisms (e.g., storing the configuration in GCS and passing the GCS path via XCom).
-        *   **Configuration management:**  The current approach relies on a combination of default values and DAG run configuration.  For more complex scenarios, consider using a dedicated configuration management system (e.g., a configuration file in GCS or a database) to improve maintainability and scalability.
-        *   **Error handling:**  More robust error handling could be added to handle cases where required configuration values are missing.
+    gcs_landing_bucket_name = _get_default_or_from_dag_run(GCS_LANDING_BUCKET_NAME, DAG_PARAM_GCS_LANDING_BUCKET_NAME,
+                                                           dag_run_conf)
+    gcs_landing_bucket_path = _get_default_or_from_dag_run(GCS_LANDING_BUCKET_PATH, DAG_PARAM_GCS_LANDING_BUCKET_PATH,
+                                                           dag_run_conf)
+    gcs_archive_bucket_name = _get_default_or_from_dag_run(GCS_ARCHIVE_BUCKET_NAME, DAG_PARAM_GCS_ARCHIVE_BUCKET_NAME,
+                                                           dag_run_conf)
+    gcs_archive_bucket_path = _get_default_or_from_dag_run(GCS_ARCHIVE_BUCKET_PATH, DAG_PARAM_GCS_ARCHIVE_BUCKET_PATH,
+                                                           dag_run_conf)
+    gcs_staging_bucket_name = _get_default_or_from_dag_run(GCS_STAGING_BUCKET_NAME, DAG_PARAM_GCS_STAGING_BUCKET_NAME,
+                                                           dag_run_conf)
+    gcs_staging_bucket_path = _get_default_or_from_dag_run(GCS_STAGING_BUCKET_PATH, DAG_PARAM_GCS_STAGING_BUCKET_PATH,
+                                                           dag_run_conf)
+    num_past_hours = _get_default_or_from_dag_run(DEFAULT_NUM_HOURS, DAG_PARAM_NUM_PAST_HOURS, dag_run_conf)
 
-3.  **`_get_impersonated_credentials(target_scopes: list, target_service_account: str)`**
 
-    *   **Purpose:** This function obtains Google Cloud credentials that are impersonated for a specific service account. Impersonation allows a different service account to act on behalf of the specified `target_service_account`.
-    *   **How it works:**
-        *   It uses `google.auth._default.default()` to get the default credentials and project ID from the environment. These are the credentials that the Airflow worker is running under.
-        *   It then uses `google.auth.impersonated_credentials.Credentials()` to create impersonated credentials.  It passes the source credentials, the target service account, the required scopes, and a lifetime (60 minutes).
-        *   It returns the impersonated credentials object.
-    *   **Business Logic:** In a secure Google Cloud environment, service account impersonation is often used to grant specific permissions to tasks. Instead of granting broad permissions to the Airflow worker service account, each task can impersonate a service account with the minimum required privileges. This enhances security and reduces the risk of unauthorized access.
-    *   **Cyclomatic Complexity:** Low.  It primarily involves calling Google Cloud library functions.
-    *   **Potential Pain Points:**
-        *   **Impersonation configuration:**  Properly configuring service account impersonation requires careful attention to IAM roles and permissions.  The Airflow worker service account must have the `roles/iam.serviceAccountTokenCreator` role on the `target_service_account`.  Misconfiguration can lead to permission errors.
-        *   **Scope management:**  Selecting the correct scopes is crucial. The scopes define the level of access granted by the impersonated credentials.  Overly broad scopes can increase security risks.
+    logging.info(f"Landing bucket name [{gcs_landing_bucket_name}]")
+    logging.info(f"Landing bucket path [{gcs_landing_bucket_path}]")
+    logging.info(f"Staging bucket name [{gcs_staging_bucket_name}]")
+    logging.info(f"Staging bucket path [{gcs_staging_bucket_path}]")
+    logging.info(f"Archive bucket name [{gcs_archive_bucket_name}]")
+    logging.info(f"Archive bucket path [{gcs_archive_bucket_path}]")
+    logging.info(f"Num past hours [{num_past_hours}]")
 
-4.  **`_get_storage_client(target_service_account: str, target_project: str)`**
+    if dag_run_conf is not None and DAG_PARAM_RUN_ID in dag_run_conf:
+        run_id = dag_run_conf[DAG_PARAM_RUN_ID]
+        reprocessing_flag = True
+        logging.info(f"Using RUN ID from user [{run_id}]")
+    else:
+        run_id = f"{execution_dt_utc.year:04}{execution_dt_utc.month:02}{execution_dt_utc.day:02}{execution_dt_utc.hour:02}{execution_dt_utc.minute:02}"
+        reprocessing_flag = False
+        logging.info(f"Creating new RUN ID [{run_id}]")
 
-    *   **Purpose:** This function creates a Google Cloud Storage client, optionally using impersonated credentials if running outside of a test environment.
-    *   **How it works:**
-        *   It imports `google.cloud.storage`.
-        *   It defines the required scopes for Cloud Storage access.
-        *   If `TEST_RUN` is "true", it creates a client using the default credentials.
-        *   Otherwise, it calls `_get_impersonated_credentials` to get impersonated credentials for the `target_service_account`.
-        *   It creates a `storage.Client` object, passing in the `target_project` and the credentials (either the default credentials or the impersonated credentials).
-        *   It returns the `storage.Client` object.
-    *   **Business Logic:** Provides access to Google Cloud Storage. The ability to use impersonated credentials allows the DAG to access storage resources with the specific permissions of the `target_service_account`, improving security.
-    *   **Cyclomatic Complexity:** Low (2).  Conditional logic based on `TEST_RUN`.
-    *   **Potential Pain Points:**
-        *   Relies on `_get_impersonated_credentials` which has the above mentioned pain points.
+    gcs_run_path = f"{gcs_staging_bucket_path}/{run_id}"
+    gcs_run_full_path = f"{gcs_staging_bucket_name}/{gcs_run_path}"
+    logging.info(f"Full RUN path on GCS [{gcs_run_full_path}]")
 
-5.  **`_get_gcs_files(bucket_name: str, gcs_path: str, **context)`**
+    job_name = f"{DF_JOB_NAME}-{run_id}"
+    logging.info(f"Job name [{job_name}]")
 
-    *   **Purpose:** This function lists files in a Google Cloud Storage bucket under a specified path (prefix).
-    *   **How it works:**
-        *   It uses the `GCSListObjectsOperator` from the Airflow GCP provider.  This operator is designed to efficiently list objects in GCS.
-        *   The operator is configured with the `bucket`, `prefix`, and `match_glob` parameters.  The `match_glob` parameter is set to `**/*` + `DELIMITER` to match files that end with the `DELIMITER` which is used for uniquely identifying the file
-        *   The `impersonation_chain` is set to `DATAFLOW_SERVICE_ACCOUNT` unless `TEST_RUN` is "true". This ensures that the listing operation is performed using the specified service account's credentials.
-        *   The `execute()` method of the operator is called to perform the listing.
-        *   The function returns the list of files found.
-    *   **Business Logic:** This function is a crucial part of the data ingestion pipeline. It identifies the files in the landing zone that need to be processed.
-    *   **Cyclomatic Complexity:** Low. Relies on the complexity of `GCSListObjectsOperator`.
-    *   **Potential Pain Points:**
-        *   **Performance:** Listing a very large number of objects in GCS can be slow. If performance becomes an issue, consider using pagination or other optimization techniques.
-        *   **Permissions:** The `DATAFLOW_SERVICE_ACCOUNT` needs to have the appropriate permissions (e.g., `storage.objects.list`) on the specified bucket and path.
+    task_instance.xcom_push(key=TASK_PARAM_LANDING_BUCKET_NAME, value=gcs_landing_bucket_name)
+    task_instance.xcom_push(key=TASK_PARAM_LANDING_BUCKET_PATH, value=gcs_landing_bucket_path)
+    task_instance.xcom_push(key=TASK_PARAM_ARCHIVE_BUCKET_NAME, value=gcs_archive_bucket_name)
+    task_instance.xcom_push(key=TASK_PARAM_ARCHIVE_BUCKET_PATH, value=gcs_archive_bucket_path)
+    task_instance.xcom_push(key=TASK_PARAM_RUN_BUCKET_NAME, value=gcs_staging_bucket_name)
+    task_instance.xcom_push(key=TASK_PARAM_RUN_BUCKET_PATH, value=gcs_run_path)
+    task_instance.xcom_push(key=TASK_PARAM_RUN_PATH_FULL, value=gcs_run_full_path)
+    task_instance.xcom_push(key=TASK_PARAM_REPROCESSING, value=reprocessing_flag)
+    task_instance.xcom_push(key=TASK_PARAM_JOB_NAME, value=job_name)
+    task_instance.xcom_push(key=TASK_PARAM_NUM_PAST_HOURS, value=num_past_hours)
 
-6.  **`select_files(landing_files, gcs_landing_bucket_path + "/", int(num_past_hours))`**
+def _is_reprocessing(**context):
+    reprocess_flag = context['ti'].xcom_pull(key=TASK_PARAM_REPROCESSING, task_ids=TASK_SETUP_PROCESSING)
+    logging.info(f"Is reprocessing required [{reprocess_flag}]")
+    return TASK_PREPARE_STAGING if not reprocess_flag else TASK_SKIP_PREPARE_STAGING
 
-    *   **Purpose:** This function selects files from a list of landing files based on their timestamp and the number of past hours to consider.
-    *   **How it works:**
-        *   TODO: Provide the body for the function
-    *   **Business Logic:** TODO: Provide the business logic for the function
-    *   **Cyclomatic Complexity:** TODO: Provide the complexity for the function
-    *   **Potential Pain Points:** TODO: Provide pain points if any
+def get_dag_vars():
+    # Placeholder for function get_dag_vars, which has not been included in the original code.
+    # Add dummy implementation to avoid undefined function error.
+    return {}
 
-7.  **`create_custom_metrics(metric_type: str, project_id: str, resource_type: str, value_type: str, val)`**
+def get_dag_var_as_int(var_name, dag_vars):
+    # Placeholder for function get_dag_var_as_int, which has not been included in the original code.
+    # Add dummy implementation to avoid undefined function error.
+    return 1
 
-    *   **Purpose:** This function creates and publishes custom metrics to Google Cloud Monitoring.
-    *   **How it works:**
-        *   It gets a MetricServiceClient instance by calling `get_metric_service_client`.
-        *   It constructs the project name in the format `projects/{project_id}`.
-        *   It creates a `monitoring_v3.TimeSeries` object. This object represents the metric data to be published.
-            *   It sets the metric type to `CUSTOM_METRIC_DOMAIN` + "/" + `metric_type`.
-            *   It adds labels to the metric, including the `application_name` (set to `DAGID`), `workflow_name` (also `DAGID`).
-            *   It sets the resource type and labels, including the `project_id`, `workflow_name`, and `location`.
-            *   It creates a `monitoring_v3.TimeInterval` object to specify the time range for the metric data.
-            *   It creates a `monitoring_v3.Point` object to represent the metric value at the specified time.
-            *   It assigns the `point` to the `series.points` list.
-        *   It calls `client.create_time_series` to publish the metric data to Cloud Monitoring.
-        *   It catches any exceptions that occur during the process and logs an error message.
-    *   **Business Logic:** This function provides a way to track the performance and health of the DAG. Custom metrics can be used to monitor things like the number of files processed, the data processing latency, and any errors that occur.
-    *   **Cyclomatic Complexity:** Moderate (try/except block, object creation).
-    *   **Potential Pain Points:**
-        *   **Error handling:** The `try...except` block catches all exceptions. It might be helpful to catch specific exceptions and handle them differently.
-        *   **Metric granularity:** Consider the granularity of the metrics being published. Publishing too many metrics or metrics with high cardinality can increase costs and impact performance.
-        *   **Permissions:** The `COMPOSER_SERVICE_ACCOUNT` must have the `monitoring.metricDescriptors.create` and `monitoring.timeSeries.create` permissions on the project.
+def get_dag_var_as_string(var_name, dag_vars):
+    # Placeholder for function get_dag_var_as_string, which has not been included in the original code.
+    # Add dummy implementation to avoid undefined function error.
+    return 'default'
 
-8.  **`_move_landing_to_staging(source_bucket: str, source_objects: list, destination_bucket: str, destination_path: str, source_path: str, **context)`**
+def _get_gcs_files(bucket_name: str, gcs_path: str, **context):
+    logging.info(
+        f"Listing files in [{bucket_name}/{gcs_path}]...")
+    gcs_list_objects = GCSListObjectsOperator(
+        task_id='list_gcs_files' + str(uuid.uuid4()),
+        bucket=bucket_name,
+        prefix=gcs_path,
+        match_glob="**/*" + DELIMITER,
+        impersonation_chain=None if TEST_RUN == "true" else DATAFLOW_SERVICE_ACCOUNT,
+        dag=dag
+    )
+    files = gcs_list_objects.execute(context)
+    logging.info(
+        f"Found [{len(files)}] files in [{bucket_name}/{gcs_path}]")
+    return files
 
-    *   **Purpose:** This function moves files from the landing zone to the staging area in GCS.
-    *   **How it works:**
-        *   It logs the number of files to be moved and the source and destination locations.
-        *   It calls the `_move_blobs` function to perform the actual file movement.
-    *   **Business Logic:** Moves files from the initial landing zone (where they are first ingested) to the staging area, which is a dedicated location for files that are ready to be processed by the Dataflow job.
-    *   **Cyclomatic Complexity:** Low. Primarily a wrapper around `_move_blobs`.
-    *   **Potential Pain Points:** Relies on `_move_blobs` which has the mentioned pain points below
+def select_files(landing_files, landing_path, num_past_hours):
+    # Placeholder for function select_files, which has not been included in the original code.
+    # Add dummy implementation to avoid undefined function error.
+    return landing_files
 
-9.  **`_move_blobs(bucket_name: str, blob_names: list, destination_bucket_name: str, destination_prefix: str, **context)`**
+def create_custom_metrics(metric_type: str, project_id: str, resource_type: str, value_type: str, val):
+    try:
+        client = get_metric_service_client(COMPOSER_SERVICE_ACCOUNT)
+        project_name = f"projects/{project_id}"
+        series = monitoring_v3.TimeSeries()
+        series.metric.type = CUSTOM_METRIC_DOMAIN + "/" + metric_type
+        series.metric.labels['application_name'] = DAGID
+        series.metric.labels['workflow_name'] = DAGID
+        series.resource.type = resource_type
+        series.resource.labels["project_id"] = project_id
+        series.resource.labels["workflow_name"] = DAGID
+        series.resource.labels["location"] = "us-central1"
+        now = time.time()
+        seconds = int(now)
+        nanos = int((now - seconds) * 10 ** 9)
+        interval = monitoring_v3.TimeInterval(
+            {"end_time": {"seconds": seconds, "nanos": nanos}}
+        )
+        point = monitoring_v3.Point({"interval": interval, "value": {value_type: val}})
+        series.points = [point]
+        client.create_time_series(name=project_name, time_series=[series])
+    except Exception as ex:
+        logging.error("Error [{}] occurred while inserting/creating custom metric".format(str(ex)))
 
-    *   **Purpose:** This function moves multiple blobs (files) from one GCS location to another using the `gsutil` command-line tool.
-    *   **How it works:**
-        *   It logs the source and destination locations.
-        *   It creates a temporary file (`tmp_file`) to store the list of source GCS paths.
-        *   It writes the GCS paths of all blobs to be moved into the temporary file, one path per line.
-        *   It constructs a `bash_cmd` that uses `gsutil -m mv -I` to move the files. The `-I` option tells `gsutil` to read the list of source paths from the temporary file. The `-m` option enables parallel moving of the files to improve performance.
-        *   It creates a `BashOperator` from Airflow to execute the `bash_cmd`.
-        *   It calls `file_copy_using_gsutil.execute(context)` to execute the bash command.
-        *   It removes the temporary file.
-    *   **Business Logic:** Moves files between GCS locations. This is a fundamental operation for data pipelines, enabling the movement of data from landing zones to staging areas, and from staging areas to archive locations. Using `gsutil -m` provides parallelization for faster file transfers.
-    *   **Cyclomatic Complexity:** Moderate. Involves file I/O, string formatting, and calling a bash command.
-    *   **Potential Pain Points:**
-        *   **Temporary file management:**  Ensure the temporary file is properly cleaned up after use (the code already does this with `os.remove(tmp_file)`).
-        *   **`gsutil` dependency:**  The function relies on the `gsutil` command-line tool being available on the Airflow worker nodes.
-        *   **Error handling:**  The `BashOperator` will raise an exception if the `gsutil` command fails. However, more granular error handling might be needed to capture specific `gsutil` errors and retry the operation.
-        *   **Security:** Running arbitrary bash commands can introduce security risks. Ensure that the `bash_cmd` is constructed carefully to prevent command injection vulnerabilities.
-        *   **File size limitations**: When the number of files is very large, the command might fail because the generated command line is too long. You might need to chunk the files and move it iteratively
+def _move_blobs(bucket_name: str, blob_names: list, destination_bucket_name: str,
+                destination_prefix: str, **context):
+    logging.info(f"Moving blobs from [{bucket_name}] to [{destination_bucket_name}/{destination_prefix}]")
+    num_blobs = len(blob_names)
+    time_millis = round(time.time() * 1000)
+    tmp_file = f"/tmp/pnr{SUFFIX}_file_copy_{time_millis}.txt"
+    with open(tmp_file, "a") as f:
+        for i, blob_name in enumerate(blob_names):
+            logging.info(
+                f"[{i + 1}/{num_blobs}] Adding blob [{bucket_name}/{blob_name}]...")
+            f.writelines(f"gs://{bucket_name}/{blob_name}\n")
 
-10. **`_prepare_staging(**context)`**
+    impersonation_opts = "" if TEST_RUN == "true" else f"-i {DATAFLOW_SERVICE_ACCOUNT}"
+    gsutil_path = "/google-cloud-sdk/bin/" if TEST_RUN == "true" else ""
+    gsutil_state_opts = f"-o 'GSUtil:state_dir=/tmp/pnr{SUFFIX}_gsutil_state_{time_millis}'"
+    bash_cmd = f"cat {tmp_file} | {gsutil_path}gsutil {gsutil_state_opts} {impersonation_opts} -m mv -I 'gs://{destination_bucket_name}/{destination_prefix}/'"
+    logging.info(f"Executing Bash command [{bash_cmd}]")
+    file_copy_using_gsutil = BashOperator(
+        task_id="file_copy_using_gsutil" + str(uuid.uuid4()),
+        bash_command=bash_cmd
+    )
+    file_copy_using_gsutil.execute(context)
+    os.remove(tmp_file)
 
-    *   **Purpose:** This function orchestrates the process of preparing the staging area by selecting files from the landing zone and moving them to the staging area.
-    *   **How it works:**
-        *   It retrieves the necessary parameters (landing bucket name/path, run bucket name/path, number of past hours) from XCom.
-        *   It retrieves `max_files` from dag variables.
-        *   It calls `_get_gcs_files` to list the files in the landing zone.
-        *   It calls `select_files` to select the files to be processed based on the timestamp and number of past hours.
-        *   It limits the number of selected landing files to `max_files` if defined.
-        *   It calls `_move_landing_to_staging` to move the selected files from the landing zone to the staging area.
-        *   It raises `AirflowFailException` if no files are found in the landing zone.
-        *   It records custom metrics
-    *   **Business Logic:** This function implements the core logic for selecting and preparing data for processing. The selection logic based on timestamp and number of past hours allows for incremental data processing.
-    *   **Cyclomatic Complexity:** Moderate. It has multiple calls to external functions, conditional logic (limiting number of files).
-    *   **Potential Pain Points:**
-        *   Relies on `select_files` to have well defined logic.
-        *   The XCom values need to be set up correctly in the `_setup_processing` function.
+    logging.info(f"Moved blobs from file [{tmp_file}] to [{destination_bucket_name}/{destination_prefix}]")
 
-11. **`_is_reprocessing(**context)`**
+def _move_landing_to_staging(source_bucket: str, source_objects: list, destination_bucket: str, destination_path: str,
+                             source_path: str, **context):
+    logging.info(
+        f"Moving [{len(source_objects)}] landing files from [{source_bucket}/{source_path}] to staging [{destination_bucket}/{destination_path}]...")
+    _move_blobs(source_bucket, source_objects, destination_bucket, destination_path, **context)
+    logging.info(
+        f"Moved [{len(source_objects)}] landing files from [{source_bucket}/{source_path}] to staging [{destination_bucket}/{destination_path}]")
 
-    *   **Purpose:** This function determines whether the current DAG run is a reprocessing run based on the `reprocessing_flag` stored in XCom.
-    *   **How it works:**
-        *   It retrieves the `reprocess_flag` from XCom using `context['ti'].xcom_pull`.
-        *   It logs the value of the flag.
-        *   It returns `TASK_PREPARE_STAGING` if `reprocess_flag` is `False` (meaning it's a normal run), and `TASK_SKIP_PREPARE_STAGING` if `reprocess_flag` is `True` (meaning it's a reprocessing run).
-    *   **Business Logic:** This function controls the execution flow of the DAG based on whether it's a normal run or a reprocessing run. In a reprocessing run, the `_prepare_staging` task might be skipped to avoid duplicating data.
-    *   **Cyclomatic Complexity:** Low (conditional statement).
-    *   **Potential Pain Points:**
-        *   The `reprocess_flag` must be correctly set in the `_setup_processing` function for this function to work correctly.
-        *   Ensure correct task ID dependency in `xcom_pull`.
+def _prepare_staging(**context):
+    ti = context['ti']
+    gcs_landing_bucket_name = ti.xcom_pull(key=TASK_PARAM_LANDING_BUCKET_NAME, task_ids=TASK_SETUP_PROCESSING)
+    gcs_landing_bucket_path = ti.xcom_pull(key=TASK_PARAM_LANDING_BUCKET_PATH, task_ids=TASK_SETUP_PROCESSING)
+    gcs_run_bucket_name = ti.xcom_pull(key=TASK_PARAM_RUN_BUCKET_NAME, task_ids=TASK_SETUP_PROCESSING)
+    gcs_run_bucket_path = ti.xcom_pull(key=TASK_PARAM_RUN_BUCKET_PATH, task_ids=TASK_SETUP_PROCESSING)
+    num_past_hours = ti.xcom_pull(key=TASK_PARAM_NUM_PAST_HOURS, task_ids=TASK_SETUP_PROCESSING)
 
-12. **`_get_df_service()`**
+    dag_vars = get_dag_vars()
+    #num_past_hours = get_dag_var_as_int(VAR_AS_NUM_PAST_HOURS, dag_vars)
+    max_files = get_dag_var_as_int(VAR_AS_MAX_FILES, dag_vars)
 
-    *   **Purpose:** This function creates and returns a Google Cloud Dataflow service object.
-    *   **How it works:**
-        *   It uses the `build` function from the `googleapiclient.discovery` module to create a Dataflow service object.
-        *   The `build` function takes the service name ("dataflow"), the API version ("v1b3"), and a `cache_discovery=False` argument.
-        *   The function logs the service object.
-        *   It returns the Dataflow service object.
-    *   **Business Logic:** This function encapsulates the creation of the Dataflow service object, which is used to interact with the Dataflow API.
-    *   **Cyclomatic Complexity:** Low.
-    *   **Potential Pain Points:**
-        *   If there are issues with the Google API client library or the Dataflow API itself, this function might fail.
-        *   The `cache_discovery=False` argument disables API discovery caching. While this might be useful for development, it can impact performance in production. Consider enabling caching for production deployments.
+    logging.info(f"Landing bucket name [{gcs_landing_bucket_name}]")
+    logging.info(f"Landing bucket path [{gcs_landing_bucket_path}]")
+    logging.info(f"Run bucket name [{gcs_run_bucket_name}]")
+    logging.info(f"Run bucket path [{gcs_run_bucket_path}]")
+    logging.info(f"Num past hours [{num_past_hours}]")
+    logging.info(f"Max files [{max_files}]")
 
-13. **`get_job_status(job_name)`**
+    logging.info(f"Getting landing files...")
+    landing_files = _get_gcs_files(gcs_landing_bucket_name, gcs_landing_bucket_path, **context)
+    logging.info(f"Got [{len(landing_files)}] landing files")
 
-    *   **Purpose:** This function retrieves the status of a Dataflow job by its name.
-    *   **How it works:**
-        *   It logs the `job_name`.
-        *   It calls the `list_jobs()` function to retrieve a list of all Dataflow jobs.
-        *   It iterates over the list of jobs and checks if the job name starts with the given `job_name`.
-        *   If a matching job is found, it retrieves the `currentState` of the job and returns it.
-        *   If no matching job is found, it returns `None`.
-    *   **Business Logic:** This function allows the DAG to monitor the status of the Dataflow job and take appropriate actions based on its status.
-    *   **Cyclomatic Complexity:** Moderate. It involves iterating over a list and checking for a match.
-    *   **Potential Pain Points:**
-        *   If there are many Dataflow jobs in the project, the `list_jobs()` function can be slow.
-        *   The function only checks if the job name *starts with* the given `job_name`. This might not be sufficient if there are multiple jobs with similar names.
-        *   The function returns the first matching job status that matches the name and could be inaccurate.
+    all_selected_landing_files = select_files(landing_files, gcs_landing_bucket_path + "/", int(num_past_hours))
+    logging.info(f"Selected [{len(all_selected_landing_files)}] landing files")
+    if 0 < max_files < len(all_selected_landing_files):
+        selected_landing_files = all_selected_landing_files[:max_files]
+    else:
+        selected_landing_files = all_selected_landing_files
+    logging.info(f"Limited selected landing files to [{len(selected_landing_files)}]")
+    size =len(selected_landing_files)
+    if len(selected_landing_files) == 0:
+        create_custom_metrics(f"pnr_input_file_count{SUFFIX}", COMPOSER_PROJECT_ID, "cloud_composer_workflow",
+                              "int64_value", 0)
+        logging.error(f"No files in landing [{gcs_landing_bucket_name}/{gcs_landing_bucket_path}]")
+        raise AirflowFailException(f"No files in landing [{gcs_landing_bucket_name}/{gcs_landing_bucket_path}]")
 
-14. **`list_jobs()`**
+    _move_landing_to_staging(gcs_landing_bucket_name, selected_landing_files, gcs_run_bucket_name, gcs_run_bucket_path,
+                             gcs_landing_bucket_path, **context)
+    create_custom_metrics(f"pnr_input_file_count{SUFFIX}", COMPOSER_PROJECT_ID, "cloud_composer_workflow",
+                          "int64_value", size)
 
-    *   **Purpose:** Lists all Dataflow jobs in a project and location.
-    *   **How it works:**
-        *   It calls `_get_df_service()` to get the Dataflow service object.
-        *   It uses the Dataflow service object to call the `projects().locations().jobs().list()` API method to list all jobs in the specified project and location.
-        *   It extracts the list of jobs from the response and returns it.
-    *   **Business Logic:** Provides a way to retrieve information about all Dataflow jobs in a project. This is useful for monitoring, auditing, and troubleshooting.
-    *   **Cyclomatic Complexity:** Low. Primarily a wrapper around the Dataflow API.
-    *   **Potential Pain Points:**
-        *   Listing all jobs can be slow if there are many jobs in the project.
-        *   The function does not handle pagination. If there are more jobs than the API's default page size, it will only return the first page of results.
+def _get_df_service():
+    df_service = build("dataflow", "v1b3", cache_discovery=False)
+    logging.info("df service [{}]".format(df_service))
+    return df_service
 
-15. **`get_job_id(job_name)`**
+def _process_staging(**context):
+    logging.info(f"Preparing Dataflow job...")
+    dag = context["dag"]
+    ti = context['ti']
+    job_name = ti.xcom_pull(key=TASK_PARAM_JOB_NAME, task_ids=TASK_SETUP_PROCESSING)
+    run_path = ti.xcom_pull(key=TASK_PARAM_RUN_PATH_FULL, task_ids=TASK_SETUP_PROCESSING)
 
-    *   **Purpose:** Retrieves the ID of a completed Dataflow job with a given name.
-    *   **How it works:**
-        *   Calls `list_jobs()` to get a list of Dataflow jobs.
-        *   Iterates through the jobs, comparing the job's name to the given `job_name`. It checks `job["name"]` starts with `job_name` and the job's `currentState` is `JOB_STATE_DONE`.
-        *   If a match is found, the job's ID is returned.
-        *   If no matching job is found that is in the state of `JOB_STATE_DONE`, `None` is returned.
-    *   **Business Logic:**  Finds the Dataflow job ID which can be used to get additional metrics from the job.
-    *   **Cyclomatic Complexity:** Moderate, involves iteration and conditional logic.
-    *   **Potential Pain Points:**
-        *   Relies on `list_jobs()` which can be slow for many jobs.
-        *   It only selects jobs in `JOB_STATE_DONE` which may not be the desired behavior for finding current jobs, or failed jobs
-        *   It only returns the first job ID which is matched.
+    dag_vars = get_dag_vars()
+    num_workers = get_dag_var_as_int(VAR_AS_DF_NUM_WORKERS, dag_vars)
+    max_workers = get_dag_var_as_int(VAR_AS_DF_MAX_WORKERS, dag_vars)
+    machine_type = get_dag_var_as_string(VAR_AS_DF_MACHINE_TYPE, dag_vars)
 
-16. **`get_job_metrics(job_id)`**
+    logging.info(f"Num workers [{num_workers}]")
+    logging.info(f"Max workers [{max_workers}]")
+    logging.info(f"Machine type [{machine_type}]")
 
-    *   **Purpose:** Retrieves metrics for a specific Dataflow job.
-    *   **How it works:**
-        *   It calls `_get_df_service()` to get the Dataflow service object.
-        *   It uses the Dataflow service object to call the `projects().locations().jobs().getMetrics()` API method to retrieve the metrics for the specified job ID.
-        *   It returns the raw response containing the metrics.
-    *   **Business Logic:** Provides access to detailed performance and operational metrics for a Dataflow job. This is crucial for monitoring the job's progress, identifying bottlenecks, and optimizing its performance.
-    *   **Cyclomatic Complexity:** Low. It primarily calls the Dataflow API.
-    *   **Potential Pain Points:**
-        *   If the Dataflow job does not exist or if the API call fails, this function will raise an exception.
-        *   The raw response from the API might need to be parsed and processed to extract the desired metrics.
+    df_job = DataflowTemplatedJobStartOperator(
+        task_id=TASK_TRIGGER_DF_JOB,
+        template=DATAFLOW_TEMPLATE_LOCATION,
+        project_id=PIPELINE_PROJECT_ID,
+        job_name=job_name,
+        location=DATAFLOW_REGION,
+        environment={
+            "serviceAccountEmail": DATAFLOW_SERVICE_ACCOUNT,
+            "additionalUserLabels": USER_LABELS
+        },
+        parameters={
+            "runPath": f"gs://{run_path}/*{DELIMITER}"
+        },
+        dataflow_default_options={
+            "tempLocation": DATAFLOW_TEMP_LOCATION,
+            "numWorkers": num_workers,
+            "maxWorkers": max_workers,
+            "machineType": machine_type
+        },
+        dag=dag
+    )
+    retry_option = 0
+    while retry_option < MAX_RETRIES:
+        try:
+            retry_option += 1
+            logging.info(f"Try [{retry_option}/{MAX_RETRIES}]")
+            logging.info(f"Starting Dataflow job [{job_name}]...")
+            df_job.execute(context)
+            break
+        except (Exception,HttpError) as err:
+            logging.error(
+                f"DataflowTemplatedJobStartOperator got HttpError exception while running DF job [{err}]")
+            create_custom_metrics(f"pnr_processed_file_count{SUFFIX}", COMPOSER_PROJECT_ID, "cloud_composer_workflow",
+                                  "int64_value", 0)
+            raise AirflowFailException(f"Unable to start Dataflow job after [{MAX_RETRIES}]")
+            time.sleep(5)
 
-17. **`get_valid_record_count(job_name, metrics_names)`**
+            continue
+        break
+    logging.info(f"Finished Dataflow job [{job_name}]")
+    ti.xcom_push("job_status", value="JOB_STATE_DONE")
+    pnr_processed_file_count = get_valid_record_count(job_name, "pnr_valid_records")
+    logging.info(f"pnr_processed_file_count [{pnr_processed_file_count}]")
+    create_custom_metrics(f"pnr_processed_file_count{SUFFIX}", COMPOSER_PROJECT_ID, "cloud_composer_workflow",
+                              "int64_value", pnr_processed_file_count)
+    diff_in_mins = get_time_diff_between_processed_tm_vs_current_time()
+    logging.info(f"Time difference between processed_dt and current time is [{diff_in_mins}]")
+    create_custom_metrics(f"pnr_processed_time_lag_in_mins{SUFFIX}", COMPOSER_PROJECT_ID, "cloud_composer_workflow",
+                              "int64_value", diff_in_mins)
 
-    *   **Purpose:** This function retrieves the count of valid records processed by a Dataflow job based on a given job name and a list of metrics names.
-    *   **How it works:**
-        *   It first calls the `get_job_id` function to retrieve the job ID corresponding to the given `job_name`.
-        *   If a `job_id` is found, it calls the `get_job_metrics` function to retrieve the metrics for that job.
-        *   If job metrics are found, it iterates through the metrics and checks if the metric name matches any of the names in `metrics_names`
-        *   If it finds a matching metric, it extracts the scalar value and returns it
-        *   If no matching metrics or no job id is found, the function returns 0
-    *   **Business Logic:** This function is meant to extract specific metric data from a Dataflow job execution, which is typically used to confirm correct output volume.
-    *   **Cyclomatic Complexity:** High, involves conditional logic, looping, and potentially error conditions.
-    *   **Potential Pain Points:**
-        *   Relies on `get_job_metrics()` and `get_job_id()` functions, which are prone to issues.
-        *   It assumes the desired metric is a scalar value. This might not be the case for all metrics.
-        *   If the `get_job_metrics` function returns `None` or if the `metrics` list is empty, the function will not return the valid record count.
+def get_job_id(job_name):
+    logging.info(job_name)
+    jobs = list_jobs()
+    logging.info("Jobs retrieved from dataflow are [{}]".format(jobs))
+    job_id = None
+    for job in jobs:
+        job_nm = job["name"]
+        if job_nm.startswith(job_name) and job["currentState"] == "JOB_STATE_DONE":
+            job_id = job["id"]
+            logging.info("job_id {} for current job {}".format(job_id, job_name))
+            break;
+        else:
+            job_id= None
+    return job_id
 
-18. **`_process_staging(**context)`**
+def get_job_metrics(job_id):
+    df_service = _get_df_service()
+    response = (
+        df_service.projects()
+        .locations()
+        .jobs()
+        .getMetrics(projectId=PIPELINE_PROJECT_ID, location=DATAFLOW_REGION, jobId=job_id)
+        .execute()
+    )
+    metrics = response
+    return metrics
 
-    *   **Purpose:** This function starts a Dataflow job from a template, passing in the staged data location and other configuration parameters.
-    *   **How it works:**
-        *   Retrieves the job name and run path from XCom.
-        *   Retrieves Dataflow worker configuration (number of workers, max workers, machine type) from dag variables
-        *   Uses `DataflowTemplatedJobStartOperator` to launch the Dataflow job. Key parameters include:
-            *   `template`: Specifies the GCS location of the Dataflow template.
-            *   `job_name`: The name of the Dataflow job.
-            *   `parameters`:  Includes the `runPath` parameter, which tells the Dataflow job where to find the input data in GCS.
-            *   `dataflow_default_options`: Specifies default options for the Dataflow job, such as the temp location, number of workers, max workers, and machine type.
-        *   The function retries in a loop to handle HttpError's thrown by the job.
-        *   It pushes the "JOB\_STATE\_DONE" status to xcom
-        *   After the Dataflow job has started, the function gets the `pnr_processed_file_count` from the Dataflow job
-        *   It get's the lag time in minutes between processed timestamp and current time
-        *   It records some custom metrics related to the job
-    *   **Business Logic:** This function encapsulates the starting of the Dataflow processing step in the DAG. It uses the Dataflow template to define the data processing logic and provides the necessary parameters to the Dataflow job.
-    *   **Cyclomatic Complexity:** High. There's a `while` loop for retries, calls to external functions, and exception handling.
-    *   **Potential Pain Points:**
-        *   **Template management:** Ensuring the Dataflow template is correctly configured and deployed is critical.
-        *   **Error handling:** The `try...except` block catches a broad exception, it might be more selective to handle specific expected exceptions.
-        *   **Parameter passing:** Ensuring the correct parameters are passed to the Dataflow job is crucial. Any misconfiguration can lead to processing errors.
-        *   **Retries**: The use of a max retry loop may cause issues and may not be ideal as it may flood the server with request. exponential backoff would be a better solution.
+def get_valid_record_count(job_name,metrics_names):
+    logging.info("job_name is {}".format(job_name))
+    job_id = get_job_id(job_name)
+    if job_id is not None:
+        logging.info("job_id is {}".format(job_id))
+        job_metrics = get_job_metrics(job_id)
+        if job_metrics is None or job_metrics["metrics"] is None:
+            logging.info("There are no metrics associated with this job {}".format(job_name))
+        else:
+            valid_record_count = 0
+            for job_metric in job_metrics["metrics"]:
+                if job_metric['name']['name'] in metrics_names:
+                    valid_record_count = job_metric['scalar']
+                    logging.info("job_metric {}".format(job_metric))
+                    return valid_record_count
+    else:
+        return 0
 
-19. **`getImpersonatedCredentials(target_scopes, target_service_account, target_project)`**
+def get_metric_service_client(target_service_account: str):
+    target_scopes = ['https://www.googleapis.com/auth/cloud-platform']
+    return monitoring_v3.MetricServiceClient()
 
-    *   **Purpose:** Gets impersonated credentials for a target service account using the Google Cloud IAM API.
-    *   **How it works:**
-        *   Uses `google.auth._default.default()` to get the default credentials and project ID from the environment.
-        *   Creates `impersonated_credentials.Credentials` using:
-            *   The default (source) credentials.
-            *   The target service account email address (constructed from `target_service_account` and `target_project`).
-            *   The required scopes.
-            *   A lifetime of 600 seconds.
-    *   **Business Logic:** Allows a service (like Airflow) to assume the identity of another service account with specific permissions. This is important for security and access control.
-    *   **Cyclomatic Complexity:** Low.
-    *   **Potential Pain Points:**
-        *   Requires the Airflow worker service account to have the correct IAM permissions to impersonate the `target_service_account`.
-        *   The lifetime of the credentials is fixed at 600 seconds. This might not be suitable for all use cases.
+def get_time_diff_between_processed_tm_vs_current_time():
+    client = get_bq_impersonated_client(service_account_name, PIPELINE_PROJECT_ID)
+    try:
+        time_difference = """
+                                SELECT
+                                    MAX(ingest_ts) max_ingest_ts,
+                                    CURRENT_TIMESTAMP() AS current_ts,
+                                    TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(ingest_ts), MINUTE) diff_in_mins
+                                FROM
+                                  {0}.{1}.{2}  WHERE ingest_ts is not null
+                                """.format(PIPELINE_PROJECT_ID, FRESHNESS_CHECK_DATASET_NAME, FRESHNESS_CHECK_TABLE_NAME)
 
-20. **`get_bq_impersonated_client(target_service_account, target_project)`**
+        logging.info(f"time_difference query: {time_difference}")
+        query_job = client.query(time_difference, job_config=bigquery.QueryJobConfig(
+            labels={"pnr-data-ingestion-label": billing_label}), job_id_prefix=billing_label)
+        query_job.result()
+        records_dict = [dict(row) for row in query_job]
+        max_ingest_ts_in_batch = records_dict[0]['max_ingest_ts']
+        current_ts = records_dict[0]['current_ts']
+        diff_in_mins = records_dict[0]['diff_in_mins']
+        logging.info(f"max_ingest_ts_in_batch: {max_ingest_ts_in_batch}")
+        logging.info(f"current_ts: {current_ts}")
+        logging.info(f"diff_in_mins: {diff_in_mins}")
 
-    *   **Purpose:** Creates a BigQuery client that uses impersonated credentials.
-    *   **How it works:**
-        *   Defines the necessary scopes for BigQuery access.
-        *   Calls `getImpersonatedCredentials` to obtain impersonated credentials for the specified service account and project.
-        *   Creates a `bigquery.Client` object using the impersonated credentials.
-    *   **Business Logic:** Allows the DAG to interact with BigQuery using the permissions of a specific service account, rather than the default credentials of the Airflow worker. This improves security and allows for fine-grained access control.
-    *   **Cyclomatic Complexity:** Low.
-    *   **Potential Pain Points:**
-        *   Depends on `getImpersonatedCredentials`, which has its own potential pain points.
-        *   Requires the correct IAM permissions to allow impersonation.
+    except Exception as e:
+        return logging.info('Error: {}'.format(str(e)))
 
-21. **`get_time_diff_between_processed_tm_vs_current_time()`**
+    return diff_in_mins
 
-    *   **Purpose:** Retrieves the time difference in minutes between the maximum `ingest_ts` (ingestion timestamp) from a BigQuery table and the current timestamp. This is used to check data freshness.
-    *   **How it works:**
-        *   Constructs a SQL query to:
-            *   Find the maximum `ingest_ts` from the specified BigQuery table (`FRESHNESS_CHECK_DATASET_NAME.FRESHNESS_CHECK_TABLE_NAME`).
-            *   Get the current timestamp (`CURRENT_TIMESTAMP()`).
-            *   Calculate the difference in minutes between the current timestamp and the maximum `ingest_ts` using `TIMESTAMP_DIFF`.
-        *   Calls `get_bq_impersonated_client` to get a BigQuery client with impersonated credentials.
-        *   Executes the SQL query using the BigQuery client.
-        *   Extracts the `max_ingest_ts`, `current_ts`, and `diff_in_mins` from the query results.
-        *   Returns the `diff_in_mins`.
-    *   **Business Logic:** This function is designed to measure the freshness of data in the BigQuery table. The time difference indicates how long ago the latest data was ingested. This is a key metric for monitoring the health and reliability of the data pipeline.
-    *   **Cyclomatic Complexity:** Moderate. Involves constructing a SQL query, executing it, and processing the results. The `try...except` block adds to the complexity.
-    *   **Potential Pain Points:**
-        *   The SQL query is hardcoded. Any changes to the table structure or data types will require modifying the query.
-        *   The function only retrieves the *maximum* `ingest_ts`. This might not be representative of the overall data freshness if there are only a few recent records.
-        *   Relies on `get_bq_impersonated_client`, which has its own potential pain points.
-        *   The `try...except` block catches all exceptions. More specific error handling would be better.
-        *   No handling when the ingestion timestamp is null.
+def list_jobs():
+    logging.info(f"Listing Dataflow jobs")
+    df_service = _get_df_service()
+    response = (
+        df_service.projects()
+        .locations()
+        .jobs()
+        .list(projectId=PIPELINE_PROJECT_ID, location=DATAFLOW_REGION)
+        .execute()
+    )
+    jobs = response["jobs"]
+    return jobs
 
-22. **`get_metric_service_client(target_service_account)`**
+def get_job_status(job_name):
+    logging.info(job_name)
+    jobs = list_jobs()
+    job_status = None
+    for job in jobs:
+        job_nm = job["name"]
+        if job_nm.startswith(job_name):
+            logging.info(job["currentState"])
+            job_status = job["currentState"]
+            break;
+        else:
+            job_status= None
+    return job_status
 
-    *   **Purpose:** Gets a Google Cloud Monitoring MetricServiceClient.
-    *   **How it works:**
-        *   Defines the necessary scopes for Cloud Monitoring access (`https://www.googleapis.com/auth/cloud-platform`).
-        *   Creates and returns a `monitoring_v3.MetricServiceClient()`
-    *   **Business Logic:** Provides a way to interact with the Google Cloud Monitoring API to create and manage metrics.
-    *   **Cyclomatic Complexity:** Low.
-    *   **Potential Pain Points:**
-        *   Doesn't use the `target_service_account` parameter. Potentially needs to use the `_get_impersonated_credentials` function to use specified service account credentials
-23.  **Main DAG Flow**
-    * The DAG will start with the `_setup_processing` function to extract all the configuration variables.
-    * The next function will be `_is_reprocessing` which will determine whether the DAG run is for a reprocessing run.
-    * If `_is_reprocessing` is false, it will run `_prepare_staging` that extracts the files to be processed, from the landing bucket to a staging bucket.
-    * After the files have been staged, the DAG will run the dataflow job, with the function `_process_staging`.
-    * If the dataflow job runs without errors, `_move_to_archive` is run which moves all the files from the staging bucket to the archive bucket.
-    * Once the files have been moved to the archive bucket, the `_cleanup_xcom` is run to remove all the XCom artifacts that were generated by this DAG run.
+def get_bq_impersonated_client(target_service_account, target_project):
+    target_scopes = ['https://www.googleapis.com/auth/cloud-platform',
+                     'https://www.googleapis.com/auth/bigquery']
+    return bigquery.Client(project=target_project, credentials=getImpersonatedCredentials(target_scopes, target_service_account, target_project))
 
-24.  **`_cleanup_xcom(context, session)`**
+def group_partitions_per_hour(processed_files, prefix):
+    # Placeholder for function group_partitions_per_hour, which has not been included in the original code.
+    # Add dummy implementation to avoid undefined function error.
+    return {}
 
-    *   **Purpose:** Cleans up XCom entries associated with the current DAG run to prevent clutter and potential data leakage.
-    *   **How it works:**
-        *   Extracts the DAG ID from the Airflow `context`.
-        *   Queries the XCom table using the provided `session` (Airflow database session).
-        *   Filters the XCom entries to delete only those associated with the current DAG ID.
-        *   Deletes the filtered XCom entries.
-    *   **Business Logic:** Maintains a clean Airflow
+def _move_to_archive(**context):
+    ti = context['ti']
+    gcs_archive_bucket_name = ti.xcom_pull(key=TASK_PARAM_ARCHIVE_BUCKET_NAME, task_ids=TASK_SETUP_PROCESSING)
+    gcs_archive_bucket_path = ti.xcom_pull(key=TASK_PARAM_ARCHIVE_BUCKET_PATH, task_ids=TASK_SETUP_PROCESSING)
+    gcs_run_bucket_name = ti.xcom_pull(key=TASK_PARAM_RUN_BUCKET_NAME, task_ids=TASK_SETUP_PROCESSING)
+    gcs_run_bucket_path = ti.xcom_pull(key=TASK_PARAM_RUN_BUCKET_PATH, task_ids=TASK_SETUP_PROCESSING)
+
+    logging.info(f"Archive bucket name [{gcs_archive_bucket_name}]")
+    logging.info(f"Archive bucket path [{gcs_archive_bucket_path}]")
+    logging.info(f"Run bucket name [{gcs_run_bucket_name}]")
+    logging.info(f"Run bucket path [{gcs_run_bucket_path}]")
+
+    logging.info(
+        f"Archiving files from [{gcs_run_bucket_name}/{gcs_run_bucket_path}] to [{gcs_archive_bucket_name}/{gcs_archive_bucket_path}]")
+
+    processed_files = _get_gcs_files(gcs_run_bucket_name, gcs_run_bucket_path, **context)
+    logging.info(f"Found [{len(processed_files)}] processed files in [{gcs_run_bucket_name}/{gcs_run_bucket_path}]")
+
+    if len(processed_files) == 0:
+        logging.error(f"No files in run path [{gcs_run_bucket_name}/{gcs_run_bucket_path}]")
+        raise AirflowFailException(f"No files in run path [{gcs_run_bucket_name}/{gcs_run_bucket_path}]")
+
+    per_hour_grouping = group_partitions_per_hour(processed_files, gcs_run_bucket_path + "/")
+
+    for partition in per_hour_grouping:
+        files_per_partition = per_hour_grouping[partition]
+        logging.info(
+            f"Moving files from partition [{partition}] to [{gcs_archive_bucket_name}/{gcs_archive_bucket_path}/{partition}/]")
+        _move_blobs(gcs_run_bucket_name, files_per_partition, gcs_archive_bucket_name,
+                    f"{gcs_archive_bucket_path}/{partition}", **context)
+    logging.info(f"Processed [{len(per_hour_grouping)}] partitions")
+
+def _cleanup_xcom(context, session=None):
+    dag_id = context["dag"].dag_id
+    session.query(XCom).filter(XCom.dag_id == dag_id).delete()
+
+```
+
+### Function Documentation
+
+**1. `getImpersonatedCredentials(target_scopes, target_service_account, target_project)`**
+
+*   **Purpose:** This function generates Google Cloud credentials using impersonation. It allows the workflow to assume the identity of a specified service account, granting it the permissions associated with that account.
+*   **Parameters:**
+    *   `target_scopes` (list): A list of OAuth scopes required for the target service account to access Google Cloud resources.  Common scopes include those for Cloud Storage and BigQuery.
+    *   `target_service_account` (str): The identifier (name) of the service account to impersonate.
+    *   `target_project` (str):  The Google Cloud project to which the target service account belongs.
+*   **Return Value:** An `impersonated_credentials.Credentials` object that can be used to authenticate API calls.
+*   **Logic:**
+    1.  Uses `google.auth._default.default()` to obtain default credentials and the current project ID. This typically leverages the credentials configured in the environment (e.g., via `gcloud auth application-default login`).
+    2.  Constructs an `impersonated_credentials.Credentials` object. The key parameters are:
+        *   `source_credentials`: The initially obtained credentials, which are used to request the impersonation token.
+        *   `target_principal`:  The full email address of the service account to impersonate (constructed from `target_service_account` and `target_project`).
+        *   `target_scopes`: The OAuth scopes the impersonated service account will have.
+        *   `lifetime`:  The duration (in seconds) for which the generated credentials will be valid (set to 600 seconds, or 10 minutes).
+*   **Business Logic:**  Impersonation is a critical security practice in cloud environments. It enables applications running with limited permissions to temporarily assume the identity of a more privileged service account for specific operations. This minimizes the risk of privilege escalation and unauthorized access.
+
+**2. `_get_default_or_from_dag_run(default_value, dag_key, dag_run_conf)`**
+
+*   **Purpose:** This function retrieves configuration values, prioritizing values passed in the Airflow DAG run configuration over default values.
+*   **Parameters:**
+    *   `default_value` (str): The default value to use if the configuration key is not found in the DAG run configuration.
+    *   `dag_key`: The key to look for in the DAG run configuration.
+    *   `dag_run_conf`: A dictionary representing the DAG run configuration (obtained from `context['dag_run'].conf`).  Can be `None` if no DAG run configuration is provided.
+*   **Return Value:** The value of the configuration key from the DAG run configuration (if found), otherwise the `default_value`.
+*   **Logic:**
+    1.  Checks if `dag_run_conf` is not `None` and if `dag_key` exists as a key within the `dag_run_conf` dictionary.
+    2.  If both conditions are true, it returns the value associated with the `dag_key` from the `dag_run_conf`.
+    3.  Otherwise, it returns the `default_value`.
+*   **Business Logic:** This function provides a mechanism for users to override default configurations for a specific DAG run. This is useful for ad-hoc adjustments, testing different parameters, or reprocessing data with specific settings without modifying the DAG's code.
+
+**3. `_get_impersonated_credentials(target_scopes, target_service_account)`**
+
+*   **Purpose:** Similar to `getImpersonatedCredentials`, this function generates Google Cloud credentials using impersonation, but with a slightly different lifetime for the credentials.
+*   **Parameters:**
+    *   `target_scopes` (list): A list of OAuth scopes required for the target service account.
+    *   `target_service_account` (str): The email address of the service account to impersonate.
+*   **Return Value:** An `impersonated_credentials.Credentials` object.
+*   **Logic:**
+    1.  Obtains default credentials and project ID using `google.auth._default.default()`.
+    2.  Constructs an `impersonated_credentials.Credentials` object, setting:
+        *   `source_credentials`: The default credentials.
+        *   `target_principal`: The `target_service_account`.
+        *   `target_scopes`: The OAuth scopes.
+        *   `lifetime`: The duration for which the credentials are valid (set to 3600 seconds, or 1 hour).
+*   **Business Logic:** This function is used to obtain credentials for a service account, allowing the program to perform actions on behalf of that
 ## UML Diagram
 ![Image](images/anotherDAG_img1.png)
 ## DAG FLOW
