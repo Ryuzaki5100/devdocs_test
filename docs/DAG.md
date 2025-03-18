@@ -1,109 +1,128 @@
 ﻿# Generated Documentation with UML
-```python
-from typing import Callable
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-```
+## Function Documentation
 
-### BaseTask.__init__(self, task_id, python_callable)
+This documentation outlines the functions and their dependencies, providing explanations for each function's purpose, functionality, and business logic, adhering to the specified execution order.
 
-**Purpose:** This is the constructor for the `BaseTask` class. It initializes the basic attributes that are common to all tasks.
-
-**Explanation:**
-
--   `self.task_id`: Stores the unique identifier for the task. This `task_id` is used by Airflow to track and manage the task within the DAG.
--   `self.python_callable`: Stores a reference to the Python function that this task will execute. This function defines the core logic of the task.
-
-**Business Logic:**
-
-The `BaseTask` class serves as the foundation for creating different types of tasks within an Airflow DAG. The `__init__` method sets up the fundamental properties needed for any task to function correctly within the Airflow environment.
-
-**Example:**
+**1. `BaseTask.__init__(self, task_id, python_callable)`**
 
 ```python
-class BaseTask:
-    def __init__(self, task_id: str, python_callable: Callable) -> None:
+ def __init__(self, task_id: str, python_callable: Callable) -> None:
         self.task_id = task_id
         self.python_callable = python_callable
 ```
 
-**Cyclomatic Complexity:** 1. The function contains a simple sequence of assignments with no branching or looping.
+*   **Purpose:** This is the constructor (initializer) for the `BaseTask` class. It's responsible for setting up the fundamental attributes that every task will possess.
 
-**Pain Points:** None identified at this level of abstraction.
+*   **Functionality:**
+    *   It takes `task_id` (a string representing the unique identifier for the task) and `python_callable` (a callable object, which is a function to be executed when the task runs) as input.
+    *   It assigns the provided `task_id` to the `self.task_id` attribute.
+    *   It assigns the provided `python_callable` to the `self.python_callable` attribute.
 
-### DataTask.__init__(self, task_id, data)
+*   **Business Logic:**  The `BaseTask` serves as an abstract representation of a generic task. The `task_id` allows the task to be uniquely identified within a larger workflow (like an Airflow DAG). The `python_callable` attribute stores the *actual* piece of code (a function) that the task is supposed to execute. This promotes a separation of concerns: the `BaseTask` handles the *management* of a task, while the `python_callable` defines the *work* the task performs.
 
-**Purpose:**  This is the constructor for the `DataTask` class, which inherits from `BaseTask`. It initializes a task that processes data.
+*   **Example:**
 
-**Explanation:**
+    ```python
+    def my_function():
+        print("Hello from my_function!")
 
--   `super().__init__(task_id, self.process_data)`: Calls the constructor of the parent class (`BaseTask`) to initialize the `task_id` and sets the `python_callable` to `self.process_data`.  This means when the Airflow operator executes this task, it will call the `process_data` method of the `DataTask` instance.
--   `self.data`: Stores the data that the task will process.
+    base_task = BaseTask(task_id="my_task", python_callable=my_function)
+    print(base_task.task_id)  # Output: my_task
+    ```
 
-**Business Logic:**
-
-The `DataTask` is designed to handle data-related operations. By inheriting from `BaseTask`, it reuses the basic task structure and adds the `data` attribute, allowing it to operate on specific data inputs.
-
-**Example:**
+**2. `DataTask.__init__(self, task_id, data)`**
 
 ```python
-class DataTask(BaseTask):
-    def __init__(self, task_id: str, data: str) -> None:
+ def __init__(self, task_id: str, data: str) -> None:
         super().__init__(task_id, self.process_data)
         self.data = data
 ```
 
-**Cyclomatic Complexity:** 1. The function contains a simple call to the superclass constructor and an assignment, with no branching or looping.
+*   **Purpose:** This is the constructor for the `DataTask` class, which inherits from `BaseTask`. It initializes a task that specifically deals with data processing.
 
-**Pain Points:** None identified.
+*   **Functionality:**
+    *   It calls the `BaseTask`'s constructor using `super().__init__(task_id, self.process_data)`. This initializes the `task_id` and, crucially, sets the `python_callable` of the base class to `self.process_data`. This means when this task is executed it will call `self.process_data` function
+    *   It takes `data` (a string representing the data to be processed) as input.
+    *   It assigns the provided `data` to the `self.data` attribute.
 
-### ComputeTask.__init__(self, task_id, operation)
+*   **Business Logic:** The `DataTask` specializes the `BaseTask` for tasks that operate on data.  The `data` attribute stores the data that the task needs to work with. By passing `self.process_data` to the `BaseTask`'s constructor, we're telling the task to execute the `process_data` method when it's run. This ties the task's behavior to the specific logic defined in `process_data`.
 
-**Purpose:** This is the constructor for the `ComputeTask` class, which inherits from `BaseTask`. It initializes a task that performs a computation.
+*   **Example:**
 
-**Explanation:**
+    ```python
+    data_task = DataTask(task_id="process_my_data", data="some_data.csv")
+    print(data_task.data)  # Output: some_data.csv
+    ```
 
--   `super().__init__(task_id, self.process_compute)`: Calls the constructor of the parent class (`BaseTask`) to initialize the `task_id` and sets the `python_callable` to `self.process_compute`.  This ensures that when the Airflow operator executes this task, it will call the `process_compute` method of the `ComputeTask` instance.
--   `self.operation`: Stores the operation that the task will perform.
-
-**Business Logic:**
-
-The `ComputeTask` is designed for computation-related tasks.  It inherits from `BaseTask` and adds the `operation` attribute.
-
-**Example:**
+**3. `ComputeTask.__init__(self, task_id, operation)`**
 
 ```python
-class ComputeTask(BaseTask):
     def __init__(self, task_id: str, operation: str) -> None:
         super().__init__(task_id, self.process_compute)
         self.operation = operation
 ```
 
-**Cyclomatic Complexity:** 1.  The function contains a simple call to the superclass constructor and an assignment, with no branching or looping.
+*   **Purpose:** This is the constructor for the `ComputeTask` class, inheriting from `BaseTask`. It initializes a task designed for performing computational operations.
 
-**Pain Points:** None identified.
+*   **Functionality:**
+    *   It calls the `BaseTask` constructor using `super().__init__(task_id, self.process_compute)`.  This initializes the `task_id` and sets the `python_callable` to `self.process_compute`. This means when this task is executed it will call `self.process_compute` function
+    *   It takes `operation` (a string representing the computational operation to be performed) as input.
+    *   It assigns the provided `operation` to the `self.operation` attribute.
 
-### BaseTask.create_task(self, dag)
+*   **Business Logic:** The `ComputeTask` provides a specialized version of `BaseTask` focused on computations. The `operation` attribute describes the computation the task needs to perform.  By setting the `python_callable` to `self.process_compute`, we ensure that the `process_compute` method is executed when the task is run.
 
-**Purpose:** This method creates an Airflow `PythonOperator` instance from the `BaseTask` object.
+*   **Example:**
 
-**Explanation:**
+    ```python
+    compute_task = ComputeTask(task_id="calculate_sum", operation="a + b")
+    print(compute_task.operation)  # Output: a + b
+    ```
 
--   `PythonOperator(...)`: Creates a `PythonOperator` instance, which is the Airflow operator responsible for executing Python callables.
-    -   `task_id=self.task_id`:  Assigns the task ID from the `BaseTask` instance to the `PythonOperator`.
-    -   `python_callable=self.python_callable`: Assigns the Python callable (the function to be executed) from the `BaseTask` instance to the `PythonOperator`.
-    -   `dag=dag`:  Associates the `PythonOperator` with the given Airflow DAG.
-
-**Business Logic:**
-
-This method bridges the gap between the task definitions (represented by `BaseTask` and its subclasses) and the Airflow framework.  It creates an Airflow-compatible operator that can be scheduled and executed as part of a DAG.
-
-**Example:**
+**4. `DataTask.process_data(self)`**
 
 ```python
-class BaseTask:
-    # ... (previous code)
+    def process_data(self) -> None:
+        print(f" Processing data tas k {self.task_id} with data: {self.data}")
+```
 
+*   **Purpose:** This method defines the data processing logic for the `DataTask`.
+
+*   **Functionality:**
+    *   It prints a message to the console indicating that the data processing task is being executed, including the `task_id` and the `data` being processed.
+
+*   **Business Logic:** This method represents the core action of the `DataTask`.  In a real-world scenario, this method would contain the actual code to process the data, such as reading from a file, transforming the data, or writing the data to a database. The current implementation is a placeholder for this logic.
+
+*   **Example:**
+
+    ```python
+    data_task = DataTask(task_id="process_data", data="my_file.txt")
+    data_task.process_data()  # Output: Processing data task process_data with data: my_file.txt
+    ```
+
+**5. `ComputeTask.process_compute(self)`**
+
+```python
+    def process_compute(self) -> None:
+        print(f"Processing compute task {self.task_id} with operation: {self.operation}")
+```
+
+*   **Purpose:** This method defines the computational logic for the `ComputeTask`.
+
+*   **Functionality:**
+    *   It prints a message to the console indicating that the compute task is being executed, including the `task_id` and the `operation` being performed.
+
+*   **Business Logic:** This method represents the central action of the `ComputeTask`. In a realistic application, this method would contain the actual code to perform the computation described by the `operation` attribute. The current implementation is a simple placeholder.
+
+*   **Example:**
+
+    ```python
+    compute_task = ComputeTask(task_id="calculate", operation="10 + 5")
+    compute_task.process_compute() # Output: Processing compute task calculate with operation: 10 + 5
+    ```
+
+**6. `BaseTask.create_task(self, dag)`**
+
+```python
     def create_task(self, dag: DAG) -> PythonOperator:
         return PythonOperator(
             task_id=self.task_id,
@@ -112,66 +131,50 @@ class BaseTask:
         )
 ```
 
-**Cyclomatic Complexity:** 1. This function consists of a single return statement that constructs a `PythonOperator` object. There are no conditional branches or loops.
+*   **Purpose:** This method is responsible for creating an Airflow `PythonOperator` object that represents the task within an Airflow DAG (Directed Acyclic Graph).
 
-**Pain Points:** None identified.
+*   **Functionality:**
+    *   It takes an Airflow `DAG` object as input.
+    *   It creates a `PythonOperator` object.
+    *   It sets the `task_id` of the `PythonOperator` to the `task_id` of the `BaseTask`.
+    *   It sets the `python_callable` of the `PythonOperator` to the `python_callable` of the `BaseTask`.  This is the crucial step that connects the task's logic (the function to execute) to the Airflow operator.
+    *   It associates the `PythonOperator` with the provided `DAG`.
+    *   It returns the created `PythonOperator` object.
 
-### DataTask.process_data(self)
+*   **Business Logic:** This method bridges the gap between the abstract `BaseTask` (and its subclasses) and the Airflow framework. It takes the information defined in the `BaseTask` (task ID and the function to execute) and uses it to create a concrete Airflow task that can be scheduled and executed within a DAG. This enables the task to become part of an automated workflow managed by Airflow.
 
-**Purpose:** This method defines the data processing logic for a `DataTask`.
+*   **Example:**
 
-**Explanation:**
+    ```python
+    from airflow import DAG
+    from airflow.operators.python import PythonOperator
+    from datetime import datetime
 
--   `print(f" Processing data task {self.task_id} with data: {self.data}")`: Prints a message to the console indicating that the data processing task is running, along with the task ID and the data being processed.  In a real-world scenario, this would be replaced by actual data processing logic (e.g., cleaning, transforming, loading data).
+    with DAG(dag_id="my_dag", start_date=datetime(2023, 1, 1), schedule_interval=None) as dag:
+        def my_function():
+            print("Task executed!")
 
-**Business Logic:**
+        base_task = BaseTask(task_id="my_airflow_task", python_callable=my_function)
+        airflow_task = base_task.create_task(dag)
+        # airflow_task is now a PythonOperator that will execute my_function when the DAG runs.
+    ```
 
-This method represents the core data processing operation performed by the `DataTask`. It's a placeholder for more complex data manipulation.
+### Mapping
+* func1 maps to BaseTask.create_task
+* func2 maps to BaseTask.__init__
+* func3 maps to ComputeTask.process_compute
+* func4 maps to DataTask.process_data
+* func5 maps to DataTask.__init__
+* func6 maps to ComputeTask.__init__
 
-**Example:**
+### Cyclomatic Complexity and Pain Points
 
-```python
-class DataTask(BaseTask):
-    # ... (previous code)
-
-    def process_data(self) -> None:
-        print(f" Processing data task {self.task_id} with data: {self.data}")
-```
-
-**Cyclomatic Complexity:** 1. This function contains only a print statement, so there are no branching or looping structures.
-
-**Pain Points:**
-
--   The current implementation only prints a message.  In a real application, this should be replaced with meaningful data processing logic.  It lacks error handling and more robust operations.
-
-### ComputeTask.process_compute(self)
-
-**Purpose:** This method defines the computation logic for a `ComputeTask`.
-
-**Explanation:**
-
--   `print(f"Processing compute task {self.task_id} with operation: {self.operation}")`: Prints a message to the console indicating that the compute task is running, along with the task ID and the operation being performed.  In a real-world scenario, this would be replaced by actual computation logic (e.g., mathematical calculations, simulations).
-
-**Business Logic:**
-
-This method represents the core computation operation performed by the `ComputeTask`. It serves as a placeholder for more complex computations.
-
-**Example:**
-
-```python
-class ComputeTask(BaseTask):
-    # ... (previous code)
-
-    def process_compute(self) -> None:
-        print(f"Processing compute task {self.task_id} with operation: {self.operation}")
-```
-
-**Cyclomatic Complexity:** 1.  This function contains only a print statement, so there are no branching or looping structures.
-
-**Pain Points:**
-
--   The current implementation only prints a message.  This should be replaced with actual computation logic. The lack of error handling and specific computation operations are limitations.
-```
+*   **Cyclomatic Complexity:** The cyclomatic complexity of these functions is generally low. Each function has a single execution path (except for the `__init__` methods which always call the super class's init, it's complexity is still low).  This means the code is easy to understand and test.
+*   **Pain Points:**
+    *   **Limited Functionality:** The `process_data` and `process_compute` methods currently only print messages.  In a real application, they would need to contain the actual data processing or computation logic.  This is a major area for expansion.
+    *   **String-Based Operations:** The `operation` attribute in `ComputeTask` is a string. This might require using `eval()` or other potentially unsafe methods to execute the operation, or building a more robust expression parser. This design choice could be a security risk and a maintenance headache. A better approach would be to use function objects or a more structured representation of the computation.
+    *   **Error Handling:**  The code lacks error handling.  For example, what happens if the `python_callable` raises an exception?  Error handling mechanisms should be added to make the code more robust.
+    *   **Lack of Abstraction:** The base class and inherited classes `DataTask` and `ComputeTask` are simple but lack advanced abstraction. The `python_callable` works to provide a basic level of function. But there is no support for logging, monitoring or other utilities in the base class.
 
 ## UML Diagram
 ![Image](images/DAG_img1.png)
