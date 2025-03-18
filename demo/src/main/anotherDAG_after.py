@@ -579,7 +579,7 @@ is_reprocessing_task = BranchPythonOperator(
     task_id='is_reprocessing_branch',
     trigger_rule=TriggerRule.ALL_DONE,
     python_callable=_is_reprocessing,
-    dag=dag
+    dag = dag
 )
 
 process_staging_task = PythonOperator(
